@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Papa from "papaparse";
+import * as XLSX from "xlsx";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, ScatterChart, Scatter, CartesianGrid, Legend
@@ -49,6 +50,8 @@ function betaCF(a,b,x) {
 }
 function incompleteBeta(a,b,x) {
   if(x<=0) return 0; if(x>=1) return 1;
+  // Use symmetry I_x(a,b)=1-I_{1-x}(b,a) when x>(a+1)/(a+b+2) for CF convergence
+  if(x > (a+1)/(a+b+2)) return 1 - incompleteBeta(b, a, 1-x);
   const lb=lgamma(a)+lgamma(b)-lgamma(a+b);
   const front=Math.exp(Math.log(x)*a+Math.log(1-x)*b-lb)/a;
   return front*betaCF(a,b,x);
@@ -56,12 +59,24 @@ function incompleteBeta(a,b,x) {
 function tCDF(t,df) { return 1-0.5*incompleteBeta(df/2,0.5,df/(df+t*t)); }
 function chiCDF(x,k) {
   if(x<=0) return 0;
-  function lowerIncGamma(a,x2){
-    let sum=0,term=1/a;
-    for(let i=0;i<200;i++){term*=x2/(a+i+1);sum+=term;if(term<1e-10)break;}
-    return Math.exp(-x2+a*Math.log(x2))*sum;
+  const a=k/2, z=x/2;
+  if(z < a+1) {
+    // Series: converges well when z < a+1 (small chi-square)
+    let ap=a, sum=0, term=1/a;
+    for(let i=0;i<300;i++){ap++; term*=z/ap; sum+=term; if(term<1e-12) break;}
+    return Math.min(1, Math.exp(-z+a*Math.log(z)-lgamma(a))*(1/a+sum));
+  } else {
+    // Continued fraction for Q=1-P: converges well for large x
+    let b=z+1-a, c=1/1e-30, d=1/b, h=d, del;
+    for(let i=1;i<=300;i++){
+      const an=-i*(i-a); b+=2;
+      d=an*d+b; if(Math.abs(d)<1e-30)d=1e-30; d=1/d;
+      c=b+an/c; if(Math.abs(c)<1e-30)c=1e-30;
+      del=d*c; h*=del; if(Math.abs(del-1)<1e-12) break;
+    }
+    const Q=Math.exp(-z+a*Math.log(z)-lgamma(a))*h;
+    return Math.max(0, 1-Q);
   }
-  return lowerIncGamma(k/2,x/2)/gamma(k/2);
 }
 function fCDF(x,d1,d2) {
   if(x<=0) return 0;
@@ -76,7 +91,8 @@ function descriptiveStats(arr) {
 }
 function freqTable(data,col) {
   const f={}; data.forEach(r=>{ const v=r[col]; if(v!=null&&v!=="") f[v]=(f[v]||0)+1; });
-  return Object.entries(f).map(([k,v])=>({name:k,count:v,pct:+(v/data.length*100).toFixed(1)}));
+  const total=Object.values(f).reduce((a,b)=>a+b,0)||1; // use actual non-missing count
+  return Object.entries(f).map(([k,v])=>({name:k,count:v,pct:+(v/total*100).toFixed(1)}));
 }
 
 // ── Chi-square ────────────────────────────────────────────────────────────────
@@ -132,8 +148,9 @@ function oneWayAnova(data,outcomeVar,groupVar) {
   const grandMean=mean(allVals);
   const SSB=groupData.reduce((a,g)=>a+g.length*(mean(g)-grandMean)**2,0);
   const SSW=groupData.reduce((a,g)=>{ const gm=mean(g); return a+g.reduce((b,v)=>b+(v-gm)**2,0); },0);
-  const dfB=k-1,dfW=N-k,MSB=SSB/dfB,MSW=SSW/dfW,F=MSB/MSW;
-  const p=1-fCDF(F,dfB,dfW);
+  const dfB=k-1,dfW=N-k,MSB=SSB/dfB,MSW=SSW/dfW;
+  const F=MSW===0?Infinity:MSB/MSW;
+  const p=MSW===0?0:1-fCDF(F,dfB,dfW);
   const groupStats=groups.map((g,i)=>({
     group:g,n:groupData[i].length,mean:+mean(groupData[i]).toFixed(3),sd:+sd(groupData[i]).toFixed(3)
   }));
@@ -144,7 +161,7 @@ function oneWayAnova(data,outcomeVar,groupVar) {
     pairs.push({ pair:`${groups[i]} vs ${groups[j]}`,meanDiff:+(mean(groupData[i])-mean(groupData[j])).toFixed(3),
                  p_raw:r.p,p_bonf:+Math.min(r.p*numPairs,1).toFixed(4) });
   }
-  return { type:"anova",F:+F.toFixed(4),dfB,dfW,p:+p.toFixed(4),SSB:+SSB.toFixed(3),SSW:+SSW.toFixed(3),
+  return { type:"anova",F:F===Infinity?Infinity:+F.toFixed(4),dfB,dfW,p:+p.toFixed(4),SSB:+SSB.toFixed(3),SSW:+SSW.toFixed(3),
            MSB:+MSB.toFixed(3),MSW:+MSW.toFixed(3),groupStats,pairs,k,N,grandMean:+grandMean.toFixed(3) };
 }
 
@@ -225,7 +242,7 @@ function logisticRegression(X_raw,y,predNames) {
     const wald=se_v?(b/se_v)**2:null;
     const pv=wald!=null?+(1-chiCDF(wald,1)).toFixed(4):null;
     return { name,beta:+b.toFixed(4),se:se_v?+se_v.toFixed(4):null,
-             wald:wald?+wald.toFixed(3):null,p:pv,
+             wald:wald!=null?+wald.toFixed(3):null,p:pv,
              or:i>0?+Math.exp(b).toFixed(4):null,
              or_lo:i>0&&se_v?+Math.exp(b-1.96*se_v).toFixed(4):null,
              or_hi:i>0&&se_v?+Math.exp(b+1.96*se_v).toFixed(4):null };
@@ -290,9 +307,12 @@ function buildPDFHtml(result, testType, fileName, interp, vars) {
     correlation:"Pearson Correlation", logistic:"Binary Logistic Regression"
   }[testType] || testType;
 
-  const pSig = p => p < 0.05
-    ? `<span style="color:#16a34a;font-weight:700">${p < 0.001 ? "p<0.001" : "p="+p} ✓</span>`
-    : `<span style="color:#dc2626">${"p="+p}</span>`;
+  const pSig = p => {
+    if(p === "N/A" || p == null) return `<span style="color:#999">N/A</span>`;
+    const pn = +p;
+    if(pn < 0.05) return `<span style="color:#16a34a;font-weight:700">${pn<0.001?"p<0.001":"p="+pn} ✓</span>`;
+    return `<span style="color:#dc2626">p=${pn}</span>`;
+  };
 
   let body = "";
 
@@ -406,6 +426,7 @@ function buildPDFHtml(result, testType, fileName, interp, vars) {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function detectType(col,data) {
   const vals=data.map(r=>r[col]).filter(v=>v!=null&&v!=="");
+  if(vals.length===0) return "categorical"; // empty column → treat as categorical
   const nums=vals.map(Number).filter(v=>!isNaN(v));
   return nums.length/vals.length>0.8?"numeric":"categorical";
 }
@@ -451,24 +472,59 @@ export default function BiostaBuddy() {
   const [dragOver,setDragOver]=useState(false);
 
 
+  const processRows=(rows)=>{
+    // Normalise: convert all values to strings, trim whitespace
+    const cleaned=rows.map(r=>{
+      const obj={};
+      Object.keys(r).forEach(k=>{
+        const v=r[k];
+        obj[k.trim()]=v==null?"":String(v).trim();
+      });
+      return obj;
+    }).filter(r=>Object.values(r).some(v=>v!==""));
+    const cols=Object.keys(cleaned[0]||{});
+    setData(cleaned);
+    setColumns(cols);
+    const types={};
+    cols.forEach(c=>{types[c]=detectType(c,cleaned);});
+    setColTypes(types);
+    // Type-aware defaults: numeric tests need numeric cols, others need categorical
+    const firstNum=cols.find(c=>types[c]==="numeric")||cols[0]||"";
+    const secondNum=cols.filter(c=>types[c]==="numeric")[1]||cols[1]||"";
+    setVarA(firstNum);
+    setVarB(secondNum);
+    setGroupVar(cols.find(c=>types[c]==="categorical")||cols[0]||"");
+    setOutcome(cols.find(c=>types[c]==="categorical")||cols[0]||"");
+    setPredictors(cols.filter(c=>types[c]==="numeric").slice(0,3));
+    setResult(null);setInterp("");
+    setPage("analysis");
+  };
+
   const handleFile=file=>{
     if(!file) return;
     setFileName(file.name);
-    Papa.parse(file,{header:true,skipEmptyLines:true,complete:({data:rows,meta})=>{
-      setData(rows);
-      const cols=meta.fields||[];
-      setColumns(cols);
-      const types={};
-      cols.forEach(c=>{types[c]=detectType(c,rows);});
-      setColTypes(types);
-      setVarA(cols[0]||"");
-      setVarB(cols[1]||"");
-      setGroupVar(cols.find(c=>types[c]==="categorical")||cols[0]||"");
-      setOutcome(cols.find(c=>types[c]==="categorical")||cols[0]||"");
-      setPredictors(cols.filter(c=>types[c]==="numeric").slice(0,3));
-      setResult(null);setInterp("");
-      setPage("analysis");
-    }});
+    const ext=file.name.split(".").pop().toLowerCase();
+
+    if(ext==="csv"){
+      Papa.parse(file,{header:true,skipEmptyLines:true,
+        complete:({data:rows})=>processRows(rows)});
+    } else if(ext==="xlsx"||ext==="xls"||ext==="ods"){
+      const reader=new FileReader();
+      reader.onload=e=>{
+        try {
+          const wb=XLSX.read(e.target.result,{type:"array"});
+          const ws=wb.Sheets[wb.SheetNames[0]]; // first sheet
+          const rows=XLSX.utils.sheet_to_json(ws,{defval:""});
+          if(rows.length===0){setResult({error:"Excel sheet appears empty or has no header row."});return;}
+          processRows(rows);
+        } catch(err){
+          setResult({error:"Could not read Excel file: "+err.message});
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      setResult({error:`Unsupported file type ".${ext}". Please upload CSV, XLSX, or XLS.`});
+    }
   };
 
   const numCols=columns.filter(c=>colTypes[c]==="numeric");
@@ -544,12 +600,18 @@ export default function BiostaBuddy() {
   const runInterp=async()=>{
     if(!result) return;
     setLoadingInterp(true);
-    const vars=testType==="logistic"?`${outcome} ~ ${predictors.join(",")}`:
-               testType==="anova"?`${varA} by ${groupVar}`:
-               testType==="ttest"?`${varA} by ${groupVar}`:
-               testType==="chisquare"?`${varA} × ${varB}`:varA;
-    const txt=await getInterpretation(testType.toUpperCase(),result,vars);
-    setInterp(txt);setLoadingInterp(false);
+    try {
+      const vars=testType==="logistic"?`${outcome} ~ ${predictors.join(",")}`:
+                 testType==="anova"?`${varA} by ${groupVar}`:
+                 testType==="ttest"?`${varA} by ${groupVar}`:
+                 testType==="chisquare"?`${varA} × ${varB}`:varA;
+      const txt=await getInterpretation(testType.toUpperCase(),result,vars);
+      setInterp(txt);
+    } catch(e){
+      setInterp(`Could not generate interpretation: ${e.message}. Check your internet connection.`);
+    } finally {
+      setLoadingInterp(false);
+    }
   };
 
   // ── Styles ───────────────────────────────────────────────────────────────────
@@ -598,14 +660,14 @@ export default function BiostaBuddy() {
                   cursor:"pointer",textAlign:"center",background:dragOver?C.accent+"11":C.card,
                   transition:"all 0.2s",width:"100%",maxWidth:460,display:"block"}}>
           <div style={{fontSize:40,marginBottom:12}}>📊</div>
-          <div style={{fontWeight:700,fontSize:15}}>Tap or drop CSV to upload</div>
-          <div style={{color:C.muted,fontSize:12,marginTop:6}}>CSV files supported</div>
+          <div style={{fontWeight:700,fontSize:15}}>Tap or drop file to upload</div>
+          <div style={{color:C.muted,fontSize:12,marginTop:6}}>CSV · XLSX · XLS supported</div>
           <div style={{marginTop:16,display:"inline-block",background:C.accent,color:"#0D1117",
             padding:"8px 24px",borderRadius:8,fontWeight:700,fontSize:13}}>Browse File</div>
         </label>
-        <input id="csvUpload" type="file" accept=".csv" style={{display:"none"}} onChange={e=>handleFile(e.target.files[0])}/>
+        <input id="csvUpload" type="file" accept=".csv,.xlsx,.xls,.ods" style={{display:"none"}} onChange={e=>handleFile(e.target.files[0])}/>
         <div style={{display:"flex",gap:10,marginTop:32,flexWrap:"wrap",justifyContent:"center"}}>
-          {["Descriptive","Chi-square","T-test","ANOVA + Post-hoc","Pearson Correlation","Logistic Regression","AI Interpretation"].map(f=>(
+          {["CSV & Excel Upload","Descriptive","Chi-square","T-test","ANOVA + Post-hoc","Pearson Correlation","Logistic Regression","AI Interpretation"].map(f=>(
             <span key={f} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:20,fontSize:11,padding:"5px 12px",color:C.muted}}>{f}</span>
           ))}
         </div>
@@ -621,7 +683,7 @@ export default function BiostaBuddy() {
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <span style={s.tag(C.green)}>✓ {fileName}</span>
           <span style={s.tag(C.accent)}>{data?.length} rows</span>
-          <button style={s.btnGhost} onClick={()=>{setPage("home");setData(null);setResult(null);}}>New File</button>
+          <button style={s.btnGhost} onClick={()=>{setPage("home");setData(null);setResult(null);setInterp("");setColumns([]);setColTypes({});setFileName("");setPredictors([]);}}>New File</button>
         </div>
       </div>
 
@@ -754,7 +816,7 @@ export default function BiostaBuddy() {
                 {/* ─ Descriptive ─ */}
                 {result.type==="descriptive"&&(
                   <>
-                    {colTypes[varA]==="numeric"?(
+                    {result.stats!==null?( // use stored result, not live state
                       <>
                         <div style={{...s.grid(4),marginBottom:18}}>
                           {[["N",result.stats.n],["Mean",result.stats.mean.toFixed(2)],["Median",result.stats.median.toFixed(2)],
@@ -894,7 +956,7 @@ export default function BiostaBuddy() {
                           <td style={{...s.td,color:C.accent}}>Between groups</td>
                           <td style={s.td}>{result.SSB}</td><td style={s.td}>{result.dfB}</td>
                           <td style={s.td}>{result.MSB}</td>
-                          <td style={{...s.td,fontWeight:700,color:C.yellow}}>{result.F}</td>
+                          <td style={{...s.td,fontWeight:700,color:C.yellow}}>{result.F===Infinity?">999":result.F}</td>
                           <td style={s.td}><PTag p={result.p}/></td>
                         </tr>
                         <tr>
