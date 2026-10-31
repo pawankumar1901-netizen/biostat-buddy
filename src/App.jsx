@@ -115,8 +115,9 @@ export default function App() {
             <div style={{ color: C.muted, fontSize: 12, marginTop: 6 }}>CSV · Excel (XLSX, XLS) · ODS</div>
             <div style={{ ...s.btn, display: "inline-block", marginTop: 16 }}>Browse file</div>
           </label>
-          <input id="fileUpload" type="file" accept=".csv,.tsv,.txt,.xlsx,.xls,.xlsm,.ods" style={{ display: "none" }}
-            onChange={e => { handleFile(e.target.files[0]); e.target.value = ""; }} />
+          <input id="fileUpload" type="file" style={{ display: "none" }}
+            accept=".csv,.tsv,.txt,.xlsx,.xls,.xlsm,.ods,text/csv,text/plain,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.oasis.opendocument.spreadsheet"
+            onChange={e => { const input = e.target; handleFile(input.files?.[0]).finally(() => { input.value = ""; }); }} />
           {homeError && <div style={{ width: "100%", maxWidth: 460, marginTop: 14 }}><Notice tone="error">⚠ {homeError}</Notice></div>}
           <button type="button" style={{ ...s.ghost, marginTop: 16 }} onClick={() => load("Sample dataset", demoSheet().sheets)}>Try with a sample dataset</button>
           <div style={{ display: "flex", gap: 8, marginTop: 30, flexWrap: "wrap", justifyContent: "center" }}>

@@ -16,30 +16,42 @@ export function toNumber(s) {
 }
 
 // ── File reading ─────────────────────────────────────────────────────────────
-export function readFile(file) {
-  const ext = (file.name.split(".").pop() || "").toLowerCase();
-  if (ext === "csv" || ext === "txt" || ext === "tsv") return readCSV(file);
-  if (["xlsx", "xls", "ods", "xlsm"].includes(ext)) return readExcel(file);
-  return Promise.reject(new Error(`".${ext}" files are not supported. Upload a CSV, XLSX, XLS or ODS file.`));
+// The whole file is read into memory first, before anything else happens. On Android, a file
+// picked from Drive/WhatsApp/Downloads can stop being readable once the picker is reset.
+const CSV_EXT = ["csv", "txt", "tsv"], XL_EXT = ["xlsx", "xls", "ods", "xlsm"];
+export async function readFile(file) {
+  let buf;
+  try { buf = await file.arrayBuffer(); }
+  catch {
+    throw new Error("Your phone did not let the app read this file. If it is in Google Drive, WhatsApp or email, download it to the phone first, then pick it from Downloads.");
+  }
+  if (!buf.byteLength) throw new Error("The file is empty.");
+  const name = file.name || "";
+  const ext = name.includes(".") ? name.split(".").pop().toLowerCase() : "";
+  const b = new Uint8Array(buf, 0, Math.min(4, buf.byteLength));
+  const isZip = b[0] === 0x50 && b[1] === 0x4b, isOle = b[0] === 0xd0 && b[1] === 0xcf && b[2] === 0x11 && b[3] === 0xe0;
+  if (CSV_EXT.includes(ext)) return readCSV(buf);
+  if (XL_EXT.includes(ext)) return readExcel(buf);
+  if (!XL_EXT.includes(ext) && !CSV_EXT.includes(ext) && ext && !/^(bin|tmp|download)$/.test(ext)) {
+    throw new Error(`".${ext}" files are not supported. Upload a CSV, XLSX, XLS or ODS file.`);
+  }
+  if (isZip || isOle) return readExcel(buf);
+  return readCSV(buf);
 }
-function readCSV(file) {
-  return new Promise((resolve, reject) => {
-    Papa.parse(file, {
-      skipEmptyLines: "greedy",
-      complete: res => {
-        const aoa = (res.data || []).map(r => r.map(v => (v == null ? "" : String(v).trim())));
-        const fatal = (res.errors || []).find(e => e.type !== "Delimiter" && e.code !== "TooFewFields" && e.code !== "TooManyFields");
-        if (!aoa.length) return reject(new Error("The file is empty."));
-        if (fatal && aoa.length < 2) return reject(new Error(`Could not read the CSV: ${fatal.message}`));
-        resolve({ sheets: [{ name: "CSV", aoa }] });
-      },
-      error: err => reject(new Error(`Could not read the CSV: ${err.message}`)),
-    });
-  });
+function decodeText(buf) {
+  try { return new TextDecoder("utf-8", { fatal: true }).decode(buf); }
+  catch { return new TextDecoder("windows-1252").decode(buf); } // older Excel "CSV" saves on Windows
 }
-async function readExcel(file) {
+function readCSV(buf) {
+  const res = Papa.parse(decodeText(buf), { skipEmptyLines: "greedy" });
+  const aoa = (res.data || []).map(r => r.map(v => (v == null ? "" : String(v).trim())));
+  const fatal = (res.errors || []).find(e => e.type !== "Delimiter" && e.code !== "TooFewFields" && e.code !== "TooManyFields");
+  if (!aoa.length) throw new Error("The file is empty.");
+  if (fatal && aoa.length < 2) throw new Error(`Could not read the CSV: ${fatal.message}`);
+  return { sheets: [{ name: "CSV", aoa }] };
+}
+async function readExcel(buf) {
   const XLSX = await import("@e965/xlsx");
-  const buf = await file.arrayBuffer();
   let wb;
   try { wb = XLSX.read(buf, { type: "array", cellNF: true }); }
   catch (e) { throw new Error(`Could not read the Excel file: ${e.message}. If it is password-protected, remove the password and try again.`); }
