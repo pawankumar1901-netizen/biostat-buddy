@@ -1,0 +1,40 @@
+// "Which test should I use?" decision tree.
+export const GUIDE = {
+  start: { q: "What do you want to do?", options: [
+    ["Summarise one variable", "r:describe"],
+    ["Compare a number between groups (e.g. Hb in males vs females)", "groups"],
+    ["Compare before vs after in the same people", "paired"],
+    ["Check if two categories are linked (e.g. smoking and TB)", "assoc"],
+    ["See if two numbers move together (e.g. age and BP)", "corr"],
+    ["Find factors that predict an outcome, adjusting for others", "reg"],
+    ["Make a baseline characteristics table", "r:table1"],
+    ["Calculate sample size", "r:sample"],
+  ] },
+  groups: { q: "How many groups?", options: [["Two groups", "groups2"], ["Three or more groups", "groups3"]] },
+  groups2: { q: "Is the number roughly normally distributed in each group?", hint: "Check with Descriptive statistics (Shapiro-Wilk p ≥ 0.05) or a histogram. With 30+ per group, mild skew is fine.", options: [["Yes, roughly normal", "r:ttest"], ["No, skewed or a score/rank", "r:mannwhitney"], ["Not sure", "r:describe"]] },
+  groups3: { q: "Is the number roughly normally distributed in each group?", hint: "Check with Descriptive statistics (Shapiro-Wilk p ≥ 0.05).", options: [["Yes, roughly normal", "r:anova"], ["No, skewed or a score/rank", "r:kruskal"], ["Not sure", "r:describe"]] },
+  paired: { q: "What was measured twice?", options: [["A number (e.g. knowledge score, BP)", "paired_num"], ["A yes/no category (e.g. anaemic yes/no)", "r:mcnemar"]] },
+  paired_num: { q: "Are the before–after differences roughly normal?", hint: "The paired t-test result shows this check for you.", options: [["Yes, or 30+ pairs", "r:pairedt"], ["No, or a small skewed sample", "r:wilcoxon"]] },
+  assoc: { q: "How many categories does each variable have?", options: [["Both have exactly 2 (exposure yes/no, outcome yes/no)", "r:twobytwo"], ["One or both have 3 or more", "r:chisquare"]] },
+  corr: { q: "Are both variables roughly normal, without big outliers?", options: [["Yes", "r:pearson"], ["No, or one is a rank/score", "r:spearman"]] },
+  reg: { q: "What type is the outcome?", options: [["A number (e.g. birth weight, SBP)", "r:linear"], ["Yes/no (e.g. disease present)", "r:logistic"]] },
+};
+export const RESULTS = {
+  describe: ["Descriptive statistics", "Mean ± SD for normal data, median (IQR) for skewed data, n (%) for categories. It also checks normality for you."],
+  ttest: ["Independent t-test", "Compares the means of 2 groups. The app picks Student or Welch for you from Levene's test."],
+  mannwhitney: ["Mann-Whitney U test", "Compares 2 groups without assuming normality. Report medians (IQR)."],
+  anova: ["One-way ANOVA", "Compares means of 3+ groups, with Bonferroni post-hoc tests to find which groups differ."],
+  kruskal: ["Kruskal-Wallis test", "Non-parametric version of ANOVA, with Dunn's post-hoc tests."],
+  pairedt: ["Paired t-test", "Compares two measurements on the same people (e.g. pre- and post-test scores)."],
+  wilcoxon: ["Wilcoxon signed-rank test", "Non-parametric version of the paired t-test. Report medians (IQR)."],
+  mcnemar: ["McNemar's test", "Compares a yes/no proportion before vs after in the same people."],
+  twobytwo: ["2×2 table: OR, RR, Fisher", "Gives the odds ratio, relative risk and risk difference with 95% CIs, plus chi-square and Fisher's exact test."],
+  chisquare: ["Chi-square test", "Tests association between two categorical variables. Watch for small expected counts."],
+  pearson: ["Pearson correlation", "Strength of a straight-line relationship between two normal numeric variables."],
+  spearman: ["Spearman correlation", "Rank-based correlation; works for skewed data and scores."],
+  linear: ["Linear regression", "Effect of several predictors on a numeric outcome, each adjusted for the others."],
+  logistic: ["Binary logistic regression", "Crude and adjusted odds ratios for a yes/no outcome."],
+  table1: ["Table 1 generator", "Baseline characteristics by group, with the right test for each row, ready to paste into Word."],
+  sample: ["Sample size calculator", "Opens the separate Sample Size Calculator app."],
+};
+export const SAMPLE_URL = "https://sample.pawansdroid.in";
