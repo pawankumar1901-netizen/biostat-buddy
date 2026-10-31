@@ -5,7 +5,13 @@ export const DEFAULT_MISSING = ["", "na", "n/a", "nan", "null", "none", "missing
 const NUM_RE = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
 const THOUSANDS_RE = /^[+-]?\d{1,3}(,\d{2,3})+(\.\d+)?$/;
 
-export const naturalCompare = (a, b) => String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" });
+// Ranges such as "< 30", "30–44", "≥ 45" sort by their numbers, so age groups stay in order.
+const rangeKey = s => { const m = /^\s*([<≤>≥]=?)?\s*(-?\d+(?:\.\d+)?)/.exec(s); if (!m) return null; const v = Number(m[2]); return m[1] && /[<≤]/.test(m[1]) ? v - 1e-9 : m[1] ? v + 1e-9 : v; };
+export const naturalCompare = (a, b) => {
+  const ka = rangeKey(String(a)), kb = rangeKey(String(b));
+  if (ka != null && kb != null && ka !== kb) return ka - kb;
+  return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" });
+};
 
 export function toNumber(s) {
   if (typeof s === "number") return s;
@@ -30,10 +36,16 @@ export async function readFile(file) {
   const ext = name.includes(".") ? name.split(".").pop().toLowerCase() : "";
   const b = new Uint8Array(buf, 0, Math.min(4, buf.byteLength));
   const isZip = b[0] === 0x50 && b[1] === 0x4b, isOle = b[0] === 0xd0 && b[1] === 0xcf && b[2] === 0x11 && b[3] === 0xe0;
+  const isSav = b[0] === 0x24 && b[1] === 0x46 && b[2] === 0x4c; // "$FL"
+  if (isSav || ext === "sav" || ext === "zsav") {
+    const { readSav } = await import("./sav.js");
+    try { return await readSav(buf); }
+    catch (e) { throw new Error(`Could not read the SPSS file: ${e.message}`); }
+  }
   if (CSV_EXT.includes(ext)) return readCSV(buf);
   if (XL_EXT.includes(ext)) return readExcel(buf);
   if (!XL_EXT.includes(ext) && !CSV_EXT.includes(ext) && ext && !/^(bin|tmp|download)$/.test(ext)) {
-    throw new Error(`".${ext}" files are not supported. Upload a CSV, XLSX, XLS or ODS file.`);
+    throw new Error(`".${ext}" files are not supported. Upload a CSV, Excel (XLSX, XLS), ODS or SPSS (.sav) file.`);
   }
   if (isZip || isOle) return readExcel(buf);
   return readCSV(buf);

@@ -1,12 +1,16 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
+// Colours are CSS variables defined in index.html for the light (Astra clean) and dark themes.
 export const C = {
-  bg: "#0D1117", surface: "#161B22", card: "#1C2333", border: "#30363D",
-  accent: "#58A6FF", green: "#3FB950", yellow: "#E3B341", red: "#F85149",
-  purple: "#BC8CFF", text: "#E6EDF3", muted: "#8B949E",
+  bg: "var(--bg)", surface: "var(--surface)", card: "var(--card)", border: "var(--border)",
+  accent: "var(--accent)", onAccent: "var(--on-accent)", green: "var(--green)", yellow: "var(--yellow)", red: "var(--red)",
+  purple: "var(--purple)", text: "var(--text)", muted: "var(--muted)",
 };
-export const PALETTE = ["#58A6FF", "#3FB950", "#E3B341", "#BC8CFF", "#F85149", "#79C0FF", "#56D364", "#F0883E"];
-export const MONO = "'JetBrains Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace";
+// Chart series colours: mid-tones that read on both light and dark backgrounds.
+export const PALETTE = ["#2F80D9", "#1FA36A", "#E8873A", "#8B6CF0", "#E05252", "#2BA3B5", "#C9A227", "#D9609C"];
+export const FONT = "'Figtree', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+// Translucent version of any colour, including CSS variables (hex alpha like "44" → 27%).
+export const mix = (color, hexAlpha) => `color-mix(in srgb, ${color} ${Math.round((parseInt(hexAlpha, 16) / 255) * 100)}%, transparent)`;
 
 export function useNarrow(px = 820) {
   const q = `(max-width: ${px}px)`;
@@ -19,15 +23,30 @@ export function useNarrow(px = 820) {
   return narrow;
 }
 
+// Light by default; the choice is remembered on this device.
+export function useTheme() {
+  const [theme, setTheme] = useState(() => document.documentElement.dataset.theme || "light");
+  const toggle = useCallback(() => {
+    setTheme(t => {
+      const next = t === "dark" ? "light" : "dark";
+      document.documentElement.dataset.theme = next;
+      document.querySelector('meta[name="theme-color"]')?.setAttribute("content", next === "dark" ? "#0D1117" : "#FFFFFF");
+      try { localStorage.setItem("bb-theme", next); } catch { /* private mode */ }
+      return next;
+    });
+  }, []);
+  return [theme, toggle];
+}
+
 export const s = {
-  card: { background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, marginBottom: 16 },
-  label: { fontSize: 11, color: C.muted, textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 6, display: "block" },
-  select: { background: C.surface, border: `1px solid ${C.border}`, color: C.text, padding: "9px 10px", borderRadius: 7, fontSize: 13, width: "100%", outline: "none", fontFamily: "inherit" },
-  input: { background: C.surface, border: `1px solid ${C.border}`, color: C.text, padding: "9px 10px", borderRadius: 7, fontSize: 13, width: "100%", outline: "none", fontFamily: "inherit" },
-  btn: { background: C.accent, color: "#0D1117", border: "none", padding: "10px 18px", borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" },
-  ghost: { background: "transparent", border: `1px solid ${C.border}`, color: C.text, padding: "7px 12px", borderRadius: 8, fontSize: 12, cursor: "pointer", fontFamily: "inherit" },
-  h3: { fontSize: 11, color: C.muted, letterSpacing: 1.5, textTransform: "uppercase", margin: "0 0 10px", fontWeight: 600 },
-  th: { padding: "7px 10px", color: C.muted, fontWeight: 600, textAlign: "left", borderBottom: `1px solid ${C.border}`, fontSize: 11, whiteSpace: "nowrap" },
-  td: { padding: "6px 10px", fontSize: 12, borderBottom: `1px solid ${C.border}55`, verticalAlign: "top" },
-  tag: col => ({ display: "inline-block", background: col + "22", color: col, border: `1px solid ${col}44`, borderRadius: 4, fontSize: 10, padding: "2px 6px", letterSpacing: 0.5, whiteSpace: "nowrap" }),
+  card: { background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, marginBottom: 16, boxShadow: "var(--shadow)" },
+  label: { fontSize: 11, color: C.muted, textTransform: "uppercase", letterSpacing: 1.1, marginBottom: 6, display: "block", fontWeight: 600 },
+  select: { background: C.surface, border: `1px solid ${C.border}`, color: C.text, padding: "9px 10px", borderRadius: 7, fontSize: 14, width: "100%", outline: "none", fontFamily: "inherit" },
+  input: { background: C.surface, border: `1px solid ${C.border}`, color: C.text, padding: "9px 10px", borderRadius: 7, fontSize: 14, width: "100%", outline: "none", fontFamily: "inherit" },
+  btn: { background: C.accent, color: C.onAccent, border: "none", padding: "10px 18px", borderRadius: 6, fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" },
+  ghost: { background: "transparent", border: `1px solid ${C.border}`, color: C.text, padding: "7px 12px", borderRadius: 6, fontSize: 13, cursor: "pointer", fontFamily: "inherit" },
+  h3: { fontSize: 11, color: C.muted, letterSpacing: 1.4, textTransform: "uppercase", margin: "0 0 10px", fontWeight: 700 },
+  th: { padding: "7px 10px", color: C.muted, fontWeight: 700, textAlign: "left", borderBottom: `1px solid ${C.border}`, fontSize: 11, whiteSpace: "nowrap" },
+  td: { padding: "6px 10px", fontSize: 13, borderBottom: `1px solid ${mix(C.border, "88")}`, verticalAlign: "top", fontVariantNumeric: "tabular-nums" },
+  tag: col => ({ display: "inline-block", background: mix(col, "22"), color: col, border: `1px solid ${mix(col, "44")}`, borderRadius: 4, fontSize: 10, padding: "2px 6px", letterSpacing: 0.4, whiteSpace: "nowrap", fontWeight: 600 }),
 };

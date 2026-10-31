@@ -8,7 +8,7 @@ import { RESULTS } from "../lib/guide.js";
 
 const GROUPS = [...new Set(TESTS.map(t => t.group))];
 
-export default function AnalyseTab({ ds, testId, setTestId, cfg, setCfg, result, run, running, fileName, narrow, onSwitch }) {
+export default function AnalyseTab({ ds, testId, setTestId, cfg, setCfg, result, run, running, fileName, narrow, onSwitch, onAdd }) {
   const test = testById(testId);
   const { values, options } = useMemo(() => resolveConfig(testId, cfg, ds), [testId, cfg, ds]);
   const set = (key, val) => setCfg({ ...values, [key]: val });
@@ -42,6 +42,57 @@ export default function AnalyseTab({ ds, testId, setTestId, cfg, setCfg, result,
         </div>
       );
     }
+    if (slot.kind === "multiNum") {
+      const cur = values[slot.key];
+      const tog = v => set(slot.key, cur.includes(v) ? cur.filter(x => x !== v) : [...cur, v]);
+      return (
+        <div key={slot.key} style={{ marginBottom: 12 }}>
+          <span style={s.label}>{slot.label}</span>
+          <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+            <button type="button" style={{ ...s.ghost, padding: "3px 9px", fontSize: 11 }} onClick={() => set(slot.key, opts)}>Select all</button>
+            <button type="button" style={{ ...s.ghost, padding: "3px 9px", fontSize: 11 }} onClick={() => set(slot.key, [])}>Clear</button>
+            <span style={{ fontSize: 11, color: C.muted, alignSelf: "center" }}>{cur.length} ticked</span>
+          </div>
+          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 7, padding: "4px 10px", maxHeight: 210, overflowY: "auto" }}>
+            {opts.length === 0 && <div style={{ fontSize: 12, color: C.muted, padding: 6 }}>No numeric variables.</div>}
+            {opts.map(p => (
+              <label key={p} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0", cursor: "pointer", fontSize: 12 }}>
+                <input type="checkbox" checked={cur.includes(p)} onChange={() => tog(p)} style={{ accentColor: C.accent, width: 16, height: 16 }} />
+                <span style={{ color: cur.includes(p) ? C.text : C.muted }}>{p}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      );
+    }
+    if (slot.kind === "order") {
+      const cur = values[slot.key];
+      const move = (i, d) => { const a = [...cur]; [a[i], a[i + d]] = [a[i + d], a[i]]; set(slot.key, a); };
+      return (
+        <div key={slot.key} style={{ marginBottom: 12 }}>
+          <span style={s.label}>{slot.label}</span>
+          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 7, padding: "4px 8px" }}>
+            {cur.map((l, i) => (
+              <div key={l} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 0", fontSize: 12 }}>
+                <span style={{ width: 18, color: C.muted }}>{i + 1}.</span><span style={{ flex: 1 }}>{l}</span>
+                <button type="button" aria-label={`Move ${l} up`} style={{ ...s.ghost, padding: "1px 8px" }} disabled={i === 0} onClick={() => move(i, -1)}>↑</button>
+                <button type="button" aria-label={`Move ${l} down`} style={{ ...s.ghost, padding: "1px 8px" }} disabled={i === cur.length - 1} onClick={() => move(i, 1)}>↓</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+    if (slot.kind === "catOpt") {
+      return (
+        <label key={slot.key} style={{ display: "block", marginBottom: 12 }}>
+          <span style={s.label}>{slot.label}</span>
+          <select style={s.select} value={values[slot.key]} onChange={e => set(slot.key, e.target.value)}>
+            {opts.map(o => <option key={o || "-"} value={o}>{o || "— None (one curve) —"}</option>)}
+          </select>
+        </label>
+      );
+    }
     const missingWhat = slot.kind === "num" ? "numeric" : slot.kind === "cat" ? "categorical" : slot.kind === "level" ? "category" : "";
     return (
       <label key={slot.key} style={{ display: "block", marginBottom: 12 }}>
@@ -55,7 +106,7 @@ export default function AnalyseTab({ ds, testId, setTestId, cfg, setCfg, result,
     );
   };
 
-  const ready = test.slots.every(sl => (sl.kind === "multi" ? values.predictors.length > 0 : !!values[sl.key]));
+  const ready = test.slots.every(sl => (sl.kind === "multi" ? values.predictors.length > 0 : sl.kind === "multiNum" ? values[sl.key].length > 1 : sl.kind === "catOpt" ? true : sl.kind === "order" ? values[sl.key].length > 1 : !!values[sl.key]));
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: narrow ? "1fr" : "320px minmax(0,1fr)", gap: 16, alignItems: "start" }}>
@@ -75,7 +126,7 @@ export default function AnalyseTab({ ds, testId, setTestId, cfg, setCfg, result,
       <div style={{ minWidth: 0 }}>
         {!result && <div style={{ ...s.card, color: C.muted, fontSize: 13, lineHeight: 1.7 }}>Choose a test and variables, then press <b style={{ color: C.text }}>Run analysis</b>. Not sure which test? Use the <b style={{ color: C.text }}>Test guide</b> tab.</div>}
         {result?.error && <Notice tone="error">⚠ {result.error}</Notice>}
-        {result?.report && <ReportView key={result.id} report={result.report} fileName={fileName} narrow={narrow} onSwitch={onSwitch} />}
+        {result?.report && <ReportView key={result.id} report={result.report} fileName={fileName} narrow={narrow} onSwitch={onSwitch} onAdd={onAdd} />}
       </div>
     </div>
   );

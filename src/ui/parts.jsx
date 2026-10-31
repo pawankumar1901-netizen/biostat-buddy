@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { C, s } from "./theme.js";
+import { C, s, mix } from "./theme.js";
 import { cellText } from "../lib/format.js";
 import { copyRich, tableHtml, tableText } from "../lib/export.js";
 
@@ -38,7 +38,7 @@ export function DataTable({ table, copy = true }) {
 
 export function Notice({ tone = "warn", children }) {
   const col = tone === "warn" ? C.yellow : tone === "error" ? C.red : C.accent;
-  return <div role={tone === "error" ? "alert" : undefined} style={{ background: col + "18", border: `1px solid ${col}55`, color: tone === "info" ? C.text : col, borderRadius: 8, padding: "9px 12px", fontSize: 12, lineHeight: 1.55, marginBottom: 10 }}>{children}</div>;
+  return <div role={tone === "error" ? "alert" : undefined} style={{ background: mix(col, "18"), border: `1px solid ${mix(col, "55")}`, color: tone === "info" ? C.text : col, borderRadius: 8, padding: "9px 12px", fontSize: 12, lineHeight: 1.55, marginBottom: 10 }}>{children}</div>;
 }
 
 export function Field({ label, children }) {

@@ -5,7 +5,8 @@ import { buildTable1 } from "../lib/table1.js";
 import { catVars, numVars } from "../lib/data.js";
 import { downloadCSV, downloadDoc, safeName, tableHtml, tableText } from "../lib/export.js";
 
-export default function Table1Tab({ ds, narrow, opts, setOpts }) {
+export default function Table1Tab({ ds, narrow, opts, setOpts, onAdd }) {
+  const [added, setAdded] = useState("");
   const cats = catVars(ds), all = [...numVars(ds), ...cats].sort((a, b) => ds.byName[a].idx - ds.byName[b].idx);
   const group = cats.includes(opts.group) ? opts.group : "";
   const vars = (opts.vars ?? all).filter(v => all.includes(v) && v !== group);
@@ -69,6 +70,7 @@ export default function Table1Tab({ ds, narrow, opts, setOpts }) {
               <CopyButton label="Copy for Word" getHtml={() => html} getText={() => tableText(out.table)} style={{ borderColor: C.accent, color: C.accent }} />
               <button type="button" style={s.ghost} onClick={() => downloadDoc(html, `${safeName(out.table.title)}.doc`)}>⬇ Word file</button>
               <button type="button" style={s.ghost} onClick={() => downloadCSV(out.table, `${safeName(out.table.title)}.csv`)}>⬇ CSV</button>
+              {onAdd && <button type="button" style={s.btn} onClick={() => { onAdd(out.table); setAdded("Added ✓"); setTimeout(() => setAdded(""), 1800); }}>{added || "＋ Add to report"}</button>}
             </div>
             <DataTable table={out.table} copy={false} />
           </div>
