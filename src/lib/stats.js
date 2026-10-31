@@ -580,3 +580,165 @@ export function hosmerLemeshow(y, prob) {
   }
   return { chi2, df: g - 2, p: pChi(chi2, g - 2) };
 }
+
+// ── Quantiles of beta and F (bisection) ──────────────────────────────────────
+export function betaInv(p, a, b) {
+  if (p <= 0) return 0;
+  if (p >= 1) return 1;
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 200; i++) { const mid = (lo + hi) / 2; if (betai(a, b, mid) < p) lo = mid; else hi = mid; }
+  return (lo + hi) / 2;
+}
+export function fInv(p, d1, d2) {
+  let lo = 0, hi = 1;
+  while (fCDF(hi, d1, d2) < p && hi < 1e10) hi *= 2;
+  for (let i = 0; i < 200; i++) { const mid = (lo + hi) / 2; if (fCDF(mid, d1, d2) < p) lo = mid; else hi = mid; }
+  return (lo + hi) / 2;
+}
+// Exact (Clopper-Pearson) 95% CI for a proportion x/n
+export function exactCI(x, n) {
+  if (!n) return [NaN, NaN];
+  return [x === 0 ? 0 : betaInv(0.025, x, n - x + 1), x === n ? 1 : betaInv(0.975, x + 1, n - x)];
+}
+
+// ── Diagnostic accuracy (2×2: test result vs reference standard) ─────────────
+// tp: test+ & disease+, fp: test+ & disease−, fn: test− & disease+, tn: test− & disease−
+export function diagnostic(tp, fp, fn, tn) {
+  const n = tp + fp + fn + tn, prop = (x, d) => ({ est: d ? x / d : NaN, ci: exactCI(x, d) });
+  const sens = prop(tp, tp + fn), spec = prop(tn, tn + fp), ppv = prop(tp, tp + fp), npv = prop(tn, tn + fn);
+  const acc = prop(tp + tn, n), prev = prop(tp + fn, n);
+  // Likelihood ratios with log-method CIs (Simel et al. 1991)
+  const lr = (num, den, se) => { const v = num / den; return { est: v, ci: Number.isFinite(se) ? [Math.exp(Math.log(v) - Z975 * se), Math.exp(Math.log(v) + Z975 * se)] : [NaN, NaN] }; };
+  const p1 = tp / (tp + fn), p2 = fp / (fp + tn);
+  const lrPos = lr(p1, p2, Math.sqrt((1 - p1) / tp + (1 - p2) / fp));
+  const lrNeg = lr(1 - p1, 1 - p2, Math.sqrt(p1 / fn + p2 / tn));
+  return { n, sens, spec, ppv, npv, acc, prev, lrPos, lrNeg, youden: sens.est + spec.est - 1 };
+}
+
+// ── ROC curve: AUC with DeLong standard error ────────────────────────────────
+function midranks(v) { return rankData(v).ranks; }
+export function roc(scores, labels) {
+  const pos = scores.filter((_, i) => labels[i] === 1), neg = scores.filter((_, i) => labels[i] === 0);
+  const n1 = pos.length, n0 = neg.length;
+  if (n1 < 2 || n0 < 2) throw new Error("Need at least 2 cases with and 2 without the condition.");
+  const all = midranks([...pos, ...neg]), rp = midranks(pos), rn = midranks(neg);
+  const v10 = pos.map((_, i) => (all[i] - rp[i]) / n0);
+  const v01 = neg.map((_, j) => 1 - (all[n1 + j] - rn[j]) / n1);
+  const auc = mean(v10);
+  const se = Math.sqrt(variance(v10) / n1 + variance(v01) / n0);
+  const z = se > 0 ? (auc - 0.5) / se : Infinity;
+  // Coordinates: "positive" when score ≥ threshold
+  const th = [...new Set(scores)].sort((a, b) => a - b);
+  const pts = [{ t: -Infinity, sens: 1, spec: 0 }];
+  for (const t of th) {
+    const tp = pos.filter(v => v >= t).length, tn = neg.filter(v => v < t).length;
+    pts.push({ t, sens: tp / n1, spec: tn / n0 });
+  }
+  pts.push({ t: Infinity, sens: 0, spec: 1 });
+  const best = pts.slice(1, -1).reduce((b, q) => (q.sens + q.spec - 1 > b.sens + b.spec - 1 ? q : b), pts[1]);
+  return { auc, se, lo: Math.max(0, auc - Z975 * se), hi: Math.min(1, auc + Z975 * se), z, p: pNorm2(z), n1, n0, points: pts, best };
+}
+
+// ── Cohen's kappa ────────────────────────────────────────────────────────────
+export function cohenKappa(table) {
+  const k = table.length, n = sum(table.map(r => sum(r)));
+  const p = table.map(r => r.map(v => v / n));
+  const row = p.map(r => sum(r)), col = p[0].map((_, j) => sum(p.map(r => r[j])));
+  const po = sum(p.map((r, i) => r[i])), pe = sum(row.map((r, i) => r * col[i]));
+  if (pe >= 1) throw new Error("Both raters used a single category only, so kappa is undefined.");
+  const kappa = (po - pe) / (1 - pe);
+  let A = 0, B = 0;
+  for (let i = 0; i < k; i++) {
+    A += p[i][i] * (1 - (row[i] + col[i]) * (1 - kappa)) ** 2;
+    for (let j = 0; j < k; j++) if (i !== j) B += p[i][j] * (col[i] + row[j]) ** 2;
+  }
+  B *= (1 - kappa) ** 2;
+  const Cc = (kappa - pe * (1 - kappa)) ** 2;
+  const se = Math.sqrt(Math.max(0, A + B - Cc)) / ((1 - pe) * Math.sqrt(n));
+  const se0 = Math.sqrt(Math.max(0, pe + pe * pe - sum(row.map((r, i) => r * col[i] * (r + col[i]))))) / ((1 - pe) * Math.sqrt(n));
+  const z = kappa / se0;
+  return { n, po, pe, kappa, se, se0, lo: kappa - Z975 * se, hi: kappa + Z975 * se, z, p: pNorm2(z) };
+}
+
+// ── Cronbach's alpha ─────────────────────────────────────────────────────────
+export function cronbach(items) { // items: array of k arrays (complete cases, same length)
+  const k = items.length, n = items[0].length;
+  if (k < 2) throw new Error("Choose at least 2 items.");
+  if (n < 3) throw new Error("Need at least 3 people with answers to every item.");
+  const total = items[0].map((_, i) => sum(items.map(it => it[i])));
+  const vt = variance(total);
+  if (!(vt > 0)) throw new Error("Total scores have no variation, so alpha is undefined.");
+  const alphaOf = its => { const tot = its[0].map((_, i) => sum(its.map(it => it[i]))); return (its.length / (its.length - 1)) * (1 - sum(its.map(variance)) / variance(tot)); };
+  const alpha = alphaOf(items);
+  let rsum = 0, rc = 0;
+  for (let a = 0; a < k; a++) for (let b = a + 1; b < k; b++) { const r = corr(items[a], items[b]); if (Number.isFinite(r)) { rsum += r; rc++; } }
+  const rbar = rsum / rc;
+  const df1 = n - 1, df2 = (n - 1) * (k - 1);
+  const ciLo = 1 - (1 - alpha) * fInv(0.975, df1, df2), ciHi = 1 - (1 - alpha) * fInv(0.025, df1, df2);
+  const itemStats = items.map((it, j) => ({
+    mean: mean(it), sd: sd(it),
+    rCorrected: corr(it, total.map((t, i) => t - it[i])),
+    alphaIfDeleted: k > 2 ? alphaOf(items.filter((_, x) => x !== j)) : NaN,
+  }));
+  return { k, n, alpha, stdAlpha: (k * rbar) / (1 + (k - 1) * rbar), meanInterItemR: rbar, ciLo, ciHi, itemStats, totalMean: mean(total), totalSd: Math.sqrt(vt) };
+}
+function corr(x, y) {
+  const mx = mean(x), my = mean(y); let a = 0, b = 0, c = 0;
+  for (let i = 0; i < x.length; i++) { const u = x[i] - mx, v = y[i] - my; a += u * v; b += u * u; c += v * v; }
+  return a / Math.sqrt(b * c);
+}
+
+// ── Chi-square for trend (ordered groups × binary outcome) ───────────────────
+export function trendTest(events, totals, scores) {
+  const N = sum(totals), R = sum(events), pbar = R / N;
+  if (R === 0 || R === N) throw new Error("Everyone has the same outcome, so a trend test is not possible.");
+  const xbar = sum(totals.map((n, i) => n * scores[i])) / N;
+  const num = sum(totals.map((n, i) => n * (scores[i] - xbar) * (events[i] / n - pbar))) ** 2;
+  const den = sum(totals.map((n, i) => n * (scores[i] - xbar) ** 2));
+  const chi2 = num / den / (pbar * (1 - pbar));             // Cochran-Armitage (as in R prop.trend.test / Epi Info)
+  const linByLin = (chi2 * (N - 1)) / N;                     // Linear-by-linear association (as in SPSS)
+  return { chi2, p: pChi(chi2, 1), linByLin, pLinByLin: pChi(linByLin, 1), N, slope: Math.sqrt(num) / den * Math.sign(sum(totals.map((n, i) => n * (scores[i] - xbar) * (events[i] / n - pbar)))) };
+}
+
+// ── Kaplan-Meier and log-rank ────────────────────────────────────────────────
+export function kaplanMeier(time, event) {
+  const idx = time.map((_, i) => i).sort((a, b) => time[a] - time[b]);
+  const n = time.length, rows = [];
+  let atRisk = n, S = 1, gw = 0, i = 0;
+  const times = [], nRisk = [], nEvent = [];
+  while (i < n) {
+    const t = time[idx[i]]; let d = 0, c = 0;
+    while (i < n && time[idx[i]] === t) { if (event[idx[i]]) d++; else c++; i++; }
+    if (d > 0) {
+      S *= 1 - d / atRisk;
+      if (atRisk > d) gw += d / (atRisk * (atRisk - d));
+      // log(-log S) ("exponential Greenwood") 95% CI, as in lifelines
+      let lo = NaN, hi = NaN;
+      if (S > 0 && S < 1) { const se = Math.sqrt(gw) / Math.abs(Math.log(S)); const ll = Math.log(-Math.log(S)); lo = Math.exp(-Math.exp(ll + Z975 * se)); hi = Math.exp(-Math.exp(ll - Z975 * se)); }
+      rows.push({ t, atRisk, d, c, S, lo, hi });
+    }
+    times.push(t); nRisk.push(atRisk); nEvent.push(d);
+    atRisk -= d + c;
+  }
+  const firstBelow = key => { const r = rows.find(q => q[key] <= 0.5); return r ? r.t : NaN; };
+  return { n, events: sum(event), rows, median: firstBelow("S"), medianLo: firstBelow("lo"), medianHi: firstBelow("hi"), times, nRisk, nEvent };
+}
+export function logRank(time, event, group, levels) {
+  const g = levels.length, ts = [...new Set(time.filter((_, i) => event[i]))].sort((a, b) => a - b);
+  const O = new Array(g).fill(0), E = new Array(g).fill(0), V = Array.from({ length: g }, () => new Array(g).fill(0));
+  for (const t of ts) {
+    const nAt = levels.map(l => time.filter((x, i) => group[i] === l && x >= t).length);
+    const dAt = levels.map(l => time.filter((x, i) => group[i] === l && x === t && event[i]).length);
+    const nT = sum(nAt), dT = sum(dAt);
+    if (nT < 1) continue;
+    for (let a = 0; a < g; a++) {
+      O[a] += dAt[a]; E[a] += (dT * nAt[a]) / nT;
+      if (nT > 1) for (let b = 0; b < g; b++) V[a][b] += (dT * (nT - dT) / (nT - 1)) * (nAt[a] / nT) * ((a === b ? 1 : 0) - nAt[b] / nT);
+    }
+  }
+  const m = g - 1, diff = O.slice(0, m).map((o, a) => o - E[a]);
+  let chi2;
+  try { const Vi = matInverse(V.slice(0, m).map(r => r.slice(0, m))); chi2 = sum(diff.map((d, a) => d * sum(diff.map((e, b) => Vi[a][b] * e)))); }
+  catch { chi2 = NaN; }
+  return { chi2, df: m, p: pChi(chi2, m), O, E };
+}

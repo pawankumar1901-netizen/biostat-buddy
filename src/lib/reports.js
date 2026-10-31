@@ -31,6 +31,25 @@ export const TESTS = [
   { id: "logistic", group: "Regression", name: "Binary logistic regression", slots: [
     { key: "outcome", label: "Outcome (categorical)", kind: "cat" }, { key: "event", label: "Event (coded 1)", kind: "level", of: "outcome", guess: true }, PREDICTORS] },
 ];
+TESTS.splice(TESTS.findIndex(t => t.id === "pearson"), 0,
+  { id: "trend", group: "Association", name: "Chi-square for trend", slots: [
+    { key: "exposure", label: "Ordered groups (e.g. age group, SES)", kind: "cat", prefer: /grp|group|ses|class|stage|grade|categ/i }, { key: "order", label: "Order: lowest to highest", kind: "order", of: "exposure" },
+    { key: "outcome", label: "Outcome", kind: "cat", not: "exposure" }, { key: "event", label: "Outcome present category", kind: "level", of: "outcome", guess: true }] });
+TESTS.push(
+  { id: "diagnostic", group: "Diagnostic & agreement", name: "Diagnostic accuracy (sensitivity, specificity)", slots: [
+    { key: "test", label: "Test / screening result", kind: "cat", prefer: /screen|test|result|index|rdt/i }, { key: "testPos", label: "Test positive category", kind: "level", of: "test", guess: true },
+    { key: "reference", label: "Reference (gold) standard", kind: "cat", not: "test", prefer: /gold|ref|diagnos|confirm|disease|diabet|culture|biopsy/i }, { key: "refPos", label: "Disease present category", kind: "level", of: "reference", guess: true }] },
+  { id: "roc", group: "Diagnostic & agreement", name: "ROC curve (AUC, best cut-off)", slots: [
+    { key: "score", label: "Test score (numeric)", kind: "num", prefer: /score|rbs|glucose|level|marker|value/i }, { key: "reference", label: "Reference (gold) standard", kind: "cat", prefer: /gold|ref|diagnos|confirm|disease|diabet|culture|biopsy/i },
+    { key: "refPos", label: "Disease present category", kind: "level", of: "reference", guess: true }] },
+  { id: "kappa", group: "Diagnostic & agreement", name: "Cohen's kappa (agreement)", slots: [
+    { key: "rater1", label: "Rater 1 / method 1", kind: "cat", prefer: /rater|doctor|observer|obs|method|1$/i }, { key: "rater2", label: "Rater 2 / method 2", kind: "cat", not: "rater1", prefer: /rater|doctor|observer|obs|method|2$/i }] },
+  { id: "alpha", group: "Questionnaire", name: "Cronbach's alpha (reliability)", slots: [{ key: "items", label: "Questionnaire items (numeric scores)", kind: "multiNum", prefer: /^(q|item|qn|question)[\s_.-]*\d+/i }] },
+  { id: "km", group: "Survival", name: "Kaplan-Meier & log-rank", slots: [
+    { key: "time", label: "Follow-up time", kind: "num", prefer: /time|month|week|days?\b|years?\b|duration|surv|^fu\b/i }, { key: "status", label: "Status (event or censored)", kind: "cat", prefer: /status|event|outcome|died|death|dead|alive|censor/i },
+    { key: "event", label: "Event category (e.g. died, relapsed)", kind: "level", of: "status", guess: true },
+    { key: "group", label: "Compare groups (optional)", kind: "catOpt", not: "status" }] },
+);
 export const testById = id => TESTS.find(t => t.id === id);
 
 const YES_RE = /^(yes|y|1|true|present|positive|pos|case|cases|disease|diseased|exposed|died|dead|death|abnormal|high|smoker|current)$/i;
@@ -47,12 +66,18 @@ export function resolveConfig(testId, cfg, ds) {
     else if (slot.kind === "any") opts = [...nums, ...cats];
     else if (slot.kind === "level") opts = levelsOf(ds, values[slot.of]);
     else if (slot.kind === "multi") opts = [...nums, ...cats];
+    else if (slot.kind === "multiNum") opts = nums;
+    else if (slot.kind === "catOpt") opts = ["", ...cats];
+    else if (slot.kind === "order") opts = levelsOf(ds, values[slot.of]);
     if (slot.not) opts = opts.filter(o => o !== values[slot.not]);
     options[slot.key] = opts;
     const cur = cfg[slot.key];
-    if (slot.kind === "multi") values[slot.key] = (Array.isArray(cur) ? cur : []).filter(v => opts.includes(v));
+    if (slot.kind === "multiNum" && !Array.isArray(cur) && slot.prefer) values[slot.key] = opts.filter(o => slot.prefer.test(o));
+    else if (slot.kind === "multi" || slot.kind === "multiNum") values[slot.key] = (Array.isArray(cur) ? cur : []).filter(v => opts.includes(v));
+    else if (slot.kind === "order") { const kept = (Array.isArray(cur) ? cur : []).filter(v => opts.includes(v)); values[slot.key] = [...kept, ...opts.filter(o => !kept.includes(o))]; }
+    else if (slot.kind === "catOpt") values[slot.key] = opts.includes(cur) ? cur : "";
     else if (opts.includes(cur)) values[slot.key] = cur;
-    else values[slot.key] = slot.guess ? guessLevel(opts) ?? "" : opts[0] ?? "";
+    else values[slot.key] = slot.guess ? guessLevel(opts) ?? "" : (slot.prefer && opts.find(o => slot.prefer.test(o))) ?? opts[0] ?? "";
   }
   if (values.predictors) {
     values.refs = {};
@@ -66,6 +91,12 @@ export function resolveConfig(testId, cfg, ds) {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+function boxStats(label, xs) {
+  if (!xs.length) return null;
+  const v = [...xs].sort((a, b) => a - b), q1 = S.quantileSorted(v, 0.25), q3 = S.quantileSorted(v, 0.75), iqr = q3 - q1;
+  const lo = q1 - 1.5 * iqr, hi = q3 + 1.5 * iqr, inside = v.filter(x => x >= lo && x <= hi);
+  return { label, n: v.length, q1, med: S.quantileSorted(v, 0.5), q3, wLo: inside[0] ?? q1, wHi: inside[inside.length - 1] ?? q3, out: v.filter(x => x < lo || x > hi).slice(0, 200) };
+}
 const fail = msg => { throw new Error(msg); };
 function groupValues(ds, outcome, group, levels) {
   const out = levels.map(() => []);
@@ -115,6 +146,16 @@ export function runTest(testId, cfg, ds) {
   const builder = BUILDERS[testId];
   builder(report, cfg, ds);
   report.warnings = report.warnings.filter(Boolean);
+  // Box-plot alternative for numeric comparisons (toggle in the chart).
+  let boxSets = null;
+  if (["ttest", "mannwhitney"].includes(testId)) boxSets = [[cfg.levelA, cfg.levelB], groupValues(ds, cfg.outcome, cfg.group, [cfg.levelA, cfg.levelB])];
+  else if (["anova", "kruskal"].includes(testId)) { const L = levelsOf(ds, cfg.group); boxSets = [L, groupValues(ds, cfg.outcome, cfg.group, L)]; }
+  else if (["pairedt", "wilcoxon"].includes(testId)) { const [x, y] = pairs(ds, cfg.before, cfg.after); boxSets = [[cfg.before, cfg.after], [x, y]]; }
+  else if (testId === "describe" && ds.byName[cfg.v]?.type === "numeric") boxSets = [[cfg.v], [ds.rows.map(r => ds.num(r, cfg.v)).filter(Number.isFinite)]];
+  if (boxSets && report.chart) {
+    const [L, G] = boxSets;
+    report.chart.box = { yLabel: testId.startsWith("paired") || testId === "wilcoxon" || testId === "describe" ? "" : cfg.outcome, data: L.map((l, i) => boxStats(l, G[i])).filter(Boolean) };
+  }
   return report;
 }
 
@@ -246,6 +287,170 @@ const BUILDERS = {
   spearman(R, c, ds) { correlation(R, c, ds, true); },
   linear(R, c, ds) { regression(R, c, ds, false); },
   logistic(R, c, ds) { regression(R, c, ds, true); },
+
+  trend(R, c, ds) {
+    const order = c.order, k = order.length;
+    if (k < 2) fail("Choose a grouping variable with at least 2 categories.");
+    const tot = order.map(() => 0), ev = order.map(() => 0);
+    for (const r of ds.rows) {
+      const i = order.indexOf(ds.cat(r, c.exposure)), o = ds.cat(r, c.outcome);
+      if (i < 0 || o == null) continue;
+      tot[i]++; if (o === c.event) ev[i]++;
+    }
+    const keep = order.map((l, i) => i).filter(i => tot[i] > 0);
+    if (keep.length < 2) fail("At least 2 groups need data.");
+    const L = keep.map(i => order[i]), T = keep.map(i => tot[i]), E = keep.map(i => ev[i]);
+    const numeric = L.every(l => Number.isFinite(Number(l)));
+    const scores = numeric ? L.map(Number) : L.map((_, i) => i + 1);
+    const t = S.trendTest(E, T, scores), overall = S.chiSquareTable(L.map((_, i) => [E[i], T[i] - E[i]]));
+    R.subtitle = `${c.outcome} = ${c.event} across ${c.exposure}`;
+    if (L.length === 2) R.warnings.push("Only 2 groups: the trend test gives the same answer as the chi-square test.");
+    R.cards = [{ label: "χ² for trend", value: fmt(t.chi2, 3) }, { label: "df", value: "1" }, { label: "p (trend)", value: fmtP(t.p), p: t.p }];
+    R.tables.push({ title: `${c.outcome} = ${c.event} by ${c.exposure}`, columns: [c.exposure, "Score", "n", `${c.event}, n (%)`], rows: L.map((l, i) => [{ t: l, bold: true }, String(scores[i]), fmtN(T[i]), `${E[i]} (${fmtPct(E[i] / T[i])})`]),
+      notes: [numeric ? "Scores are the category values." : "Scores are 1, 2, 3… in the order you set. Check that the order runs from lowest to highest."] });
+    R.tables.push({ title: "Tests", columns: ["Test", "χ²", "df", "p"], rows: [
+      ["Chi-square for linear trend (Cochran-Armitage)", fmt(t.chi2, 3), "1", pCell(t.p)],
+      ["Linear-by-linear association (as in SPSS)", fmt(t.linByLin, 3), "1", pCell(t.pLinByLin)],
+      ["Overall chi-square (any difference)", fmt(overall.chi2, 3), fmtN(overall.df), pCell(overall.p)]] });
+    const dir = t.slope >= 0 ? "increased" : "decreased";
+    R.sentence = `The proportion with ${c.outcome} = ${c.event} ${dir} from ${fmtPct(E[0] / T[0])} in ${L[0]} to ${fmtPct(E[E.length - 1] / T[T.length - 1])} in ${L[L.length - 1]}. ` +
+      `This linear trend was ${sig(t.p) ? "" : "not "}statistically significant (χ² for trend = ${fmt(t.chi2, 2)}, df = 1, ${pText(t.p)}).`;
+    R.chart = { type: "bars", data: L.map((l, i) => ({ label: l, value: (100 * E[i]) / T[i] })), unit: "%", yLabel: `% ${c.event}` };
+    R.warnings.push(droppedWarn(ds.rows.length - S.sum(T)));
+  },
+
+  diagnostic(R, c, ds) {
+    let tp = 0, fp = 0, fn = 0, tn = 0, n = 0;
+    for (const r of ds.rows) {
+      const t = ds.cat(r, c.test), g = ds.cat(r, c.reference);
+      if (t == null || g == null) continue;
+      n++; const tpos = t === c.testPos, gpos = g === c.refPos;
+      if (tpos && gpos) tp++; else if (tpos) fp++; else if (gpos) fn++; else tn++;
+    }
+    if (!n) fail("No rows have both the test and the reference result.");
+    if (tp + fn === 0) fail(`No one has ${c.reference} = ${c.refPos}, so sensitivity cannot be calculated.`);
+    if (tn + fp === 0) fail(`Everyone has ${c.reference} = ${c.refPos}, so specificity cannot be calculated.`);
+    const d = S.diagnostic(tp, fp, fn, tn);
+    const pc = q => `${fmtPct(q.est)} (${fmtPct(q.ci[0])} to ${fmtPct(q.ci[1])})`;
+    R.subtitle = `${c.test} (${c.testPos} = positive) vs ${c.reference} (${c.refPos} = disease)`;
+    for (const [v, lvl] of [[c.test, c.testPos], [c.reference, c.refPos]]) { const lv = levelsOf(ds, v); if (lv.length > 2) R.warnings.push(`"${v}" has ${lv.length} categories: ${lvl} is positive and all others are negative.`); }
+    R.cards = [{ label: "Sensitivity", value: fmtPct(d.sens.est) }, { label: "Specificity", value: fmtPct(d.spec.est) }, { label: "PPV", value: fmtPct(d.ppv.est) }, { label: "NPV", value: fmtPct(d.npv.est) }];
+    R.tables.push({ title: "2×2 table", columns: [`${c.test} \\ ${c.reference}`, `${c.refPos} (disease +)`, "No disease", "Total"], rows: [
+      [{ t: `Positive (${c.testPos})`, bold: true }, `${tp} (TP)`, `${fp} (FP)`, fmtN(tp + fp)],
+      [{ t: "Negative", bold: true }, `${fn} (FN)`, `${tn} (TN)`, fmtN(fn + tn)],
+      [{ t: "Total", bold: true }, fmtN(tp + fn), fmtN(fp + tn), fmtN(n)]] });
+    R.tables.push({ title: "Diagnostic accuracy", columns: ["Measure", "Estimate (95% CI)"], rows: [
+      ["Sensitivity", pc(d.sens)], ["Specificity", pc(d.spec)], ["Positive predictive value (PPV)", pc(d.ppv)], ["Negative predictive value (NPV)", pc(d.npv)],
+      ["Accuracy", pc(d.acc)], ["Prevalence in this sample", pc(d.prev)],
+      ["Positive likelihood ratio (LR+)", `${fmt(d.lrPos.est)} (${ci(d.lrPos.ci[0], d.lrPos.ci[1])})`], ["Negative likelihood ratio (LR−)", `${fmt(d.lrNeg.est)} (${ci(d.lrNeg.ci[0], d.lrNeg.ci[1])})`],
+      ["Youden index", fmt(d.youden, 3)]],
+      notes: ["Exact (Clopper-Pearson) 95% CIs for proportions; log-method CIs for likelihood ratios.", "PPV and NPV depend on how common the disease is in this sample."] });
+    R.sentence = `Against ${c.reference}, ${c.test} had a sensitivity of ${pc(d.sens)} and a specificity of ${pc(d.spec)}. The positive predictive value was ${fmtPct(d.ppv.est)} and the negative predictive value ${fmtPct(d.npv.est)} at a prevalence of ${fmtPct(d.prev.est)} (n = ${n}).`;
+    R.chart = { type: "bars", data: [["Sensitivity", d.sens], ["Specificity", d.spec], ["PPV", d.ppv], ["NPV", d.npv]].map(([l, q]) => ({ label: l, value: 100 * q.est })), unit: "%" };
+    R.warnings.push(droppedWarn(ds.rows.length - n));
+  },
+
+  roc(R, c, ds) {
+    const xs = [], ys = [];
+    for (const r of ds.rows) { const v = ds.num(r, c.score), g = ds.cat(r, c.reference); if (Number.isFinite(v) && g != null) { xs.push(v); ys.push(g === c.refPos ? 1 : 0); } }
+    let r = S.roc(xs, ys), flip = false;
+    if (r.auc < 0.5) { r = S.roc(xs.map(v => -v), ys); flip = true; }
+    const k = decimalsFor(xs), cut = flip ? -r.best.t : r.best.t, rule = flip ? "≤" : "≥";
+    const grade = a => (a >= 0.9 ? "excellent" : a >= 0.8 ? "good" : a >= 0.7 ? "fair" : a >= 0.6 ? "poor" : "failed");
+    R.subtitle = `${c.score} for ${c.reference} = ${c.refPos}`;
+    if (flip) R.warnings.push(`Lower values of ${c.score} indicate ${c.refPos}, so the test was read as positive when ${c.score} ≤ cut-off.`);
+    R.cards = [{ label: "AUC (95% CI)", value: `${fmt(r.auc, 3)} (${fmt(r.lo, 2)}–${fmt(r.hi, 2)})` }, { label: "p (vs 0.5)", value: fmtP(r.p), p: r.p }, { label: "Best cut-off", value: `${rule} ${fmt(cut, k)}` }, { label: "Sens / Spec at cut-off", value: `${fmtPct(r.best.sens)} / ${fmtPct(r.best.spec)}` }];
+    R.tables.push({ title: "Area under the ROC curve", columns: ["AUC", "SE", "95% CI", "p", "With / without disease"], rows: [[fmt(r.auc, 3), fmt(r.se, 3), ci(r.lo, r.hi, 3), pCell(r.p), `${r.n1} / ${r.n0}`]],
+      notes: ["DeLong standard error. AUC: 0.9–1 excellent, 0.8–0.9 good, 0.7–0.8 fair, 0.6–0.7 poor, 0.5–0.6 fail."] });
+    const pts = r.points.slice(1, -1), step = Math.max(1, Math.ceil(pts.length / 25));
+    const shown = pts.filter((q, i) => i % step === 0 || q === r.best);
+    R.tables.push({ title: "Coordinates of the curve", columns: [`Positive if ${c.score} ${rule}`, "Sensitivity", "Specificity", "Youden J"],
+      rows: shown.map(q => [{ t: fmt(flip ? -q.t : q.t, k), bold: q === r.best }, { t: fmtPct(q.sens), bold: q === r.best }, { t: fmtPct(q.spec), bold: q === r.best }, { t: fmt(q.sens + q.spec - 1, 3), bold: q === r.best }]),
+      notes: ["The best cut-off (bold) maximises Youden's J = sensitivity + specificity − 1."] });
+    R.sentence = `${c.score} discriminated ${c.reference} = ${c.refPos} with an AUC of ${fmt(r.auc, 3)} (95% CI ${ci(r.lo, r.hi, 3)}, ${pText(r.p)}), which is ${grade(r.auc)}. ` +
+      `The best cut-off was ${rule} ${fmt(cut, k)}, with a sensitivity of ${fmtPct(r.best.sens)} and a specificity of ${fmtPct(r.best.spec)}.`;
+    R.chart = { type: "roc", points: r.points.map(q => ({ x: 1 - q.spec, y: q.sens })).sort((a, b) => a.x - b.x || a.y - b.y), best: { x: 1 - r.best.spec, y: r.best.sens } };
+  },
+
+  kappa(R, c, ds) {
+    const [a, b, dropped] = pairs(ds, c.rater1, c.rater2, "cat");
+    if (a.length < 2) fail("Need at least 2 rows rated by both.");
+    const L = [...new Set([...a, ...b])].sort(naturalCompare);
+    if (L.length < 2) fail("Both raters used the same single category, so agreement cannot be measured.");
+    const t = L.map(() => L.map(() => 0));
+    a.forEach((v, i) => t[L.indexOf(v)][L.indexOf(b[i])]++);
+    const k = S.cohenKappa(t);
+    const grade = x => (x < 0 ? "poor" : x <= 0.2 ? "slight" : x <= 0.4 ? "fair" : x <= 0.6 ? "moderate" : x <= 0.8 ? "substantial" : "almost perfect");
+    R.subtitle = `${c.rater1} vs ${c.rater2}`;
+    R.cards = [{ label: "Kappa (κ)", value: fmt(k.kappa, 3) }, { label: "95% CI", value: ci(k.lo, k.hi, 2) }, { label: "p", value: fmtP(k.p), p: k.p }, { label: "Observed agreement", value: fmtPct(k.po) }];
+    R.tables.push({ title: "Agreement table", columns: [`${c.rater1} \\ ${c.rater2}`, ...L, "Total"], rows: [
+      ...L.map((l, i) => [{ t: l, bold: true }, ...t[i].map((v, j) => (i === j ? { t: String(v), bold: true } : String(v))), fmtN(S.sum(t[i]))]),
+      [{ t: "Total", bold: true }, ...L.map((_, j) => fmtN(S.sum(t.map(r => r[j])))), fmtN(k.n)]], notes: ["Agreements are on the diagonal (bold)."] });
+    R.tables.push({ title: "Cohen's kappa", columns: ["κ", "SE", "95% CI", "z", "p", "Observed agreement", "Expected by chance"], rows: [[fmt(k.kappa, 3), fmt(k.se, 3), ci(k.lo, k.hi, 3), fmt(k.z, 2), pCell(k.p), fmtPct(k.po), fmtPct(k.pe)]],
+      notes: ["Landis & Koch: ≤0.20 slight, 0.21–0.40 fair, 0.41–0.60 moderate, 0.61–0.80 substantial, 0.81–1 almost perfect.", L.length > 2 ? "For ordered categories (e.g. mild/moderate/severe), weighted kappa may suit better." : ""].filter(Boolean) });
+    R.sentence = `Agreement between ${c.rater1} and ${c.rater2} was ${grade(k.kappa)} (Cohen's κ = ${fmt(k.kappa, 2)}, 95% CI ${ci(k.lo, k.hi, 2)}, ${pText(k.p)}; observed agreement ${fmtPct(k.po)}, n = ${k.n}).`;
+    R.chart = { type: "grouped", data: L.map((l, i) => Object.fromEntries([["label", l], ...L.map((m, j) => [m, S.sum(t[i]) ? (100 * t[i][j]) / S.sum(t[i]) : 0])])), keys: L, unit: "%", yLabel: `% within ${c.rater1}` };
+    R.warnings.push(droppedWarn(dropped, "rows without both ratings"));
+  },
+
+  alpha(R, c, ds) {
+    const items = c.items;
+    if (items.length < 2) fail("Tick at least 2 items.");
+    const rows = ds.rows.filter(r => items.every(it => Number.isFinite(ds.num(r, it))));
+    const cols = items.map(it => rows.map(r => ds.num(r, it)));
+    const a = S.cronbach(cols);
+    const grade = x => (x >= 0.9 ? "excellent" : x >= 0.8 ? "good" : x >= 0.7 ? "acceptable" : x >= 0.6 ? "questionable" : x >= 0.5 ? "poor" : "unacceptable");
+    R.subtitle = `${items.length} items`;
+    R.cards = [{ label: "Cronbach's α", value: fmt(a.alpha, 3) }, { label: "95% CI", value: ci(a.ciLo, a.ciHi, 2) }, { label: "Items", value: fmtN(a.k) }, { label: "Respondents", value: fmtN(a.n) }];
+    R.tables.push({ title: "Reliability", columns: ["Cronbach's α", "95% CI (Feldt)", "Standardised α", "Mean inter-item r", "Items", "n"], rows: [[fmt(a.alpha, 3), ci(a.ciLo, a.ciHi, 3), fmt(a.stdAlpha, 3), fmt(a.meanInterItemR, 3), fmtN(a.k), fmtN(a.n)]],
+      notes: ["≥0.9 excellent, 0.8–0.9 good, 0.7–0.8 acceptable, 0.6–0.7 questionable, 0.5–0.6 poor."] });
+    R.tables.push({ title: "Item statistics", columns: ["Item", "Mean ± SD", "Corrected item-total r", "α if item deleted"],
+      rows: items.map((it, i) => { const q = a.itemStats[i], up = q.alphaIfDeleted > a.alpha + 0.005; return [{ t: it, bold: true }, meanSd(q.mean, q.sd), { t: fmt(q.rCorrected, 3), sig: false }, { t: fmt(q.alphaIfDeleted, 3), bold: up }]; }),
+      notes: ["Bold α-if-deleted means removing that item would raise reliability. Item-total r below 0.3 suggests a weak item."] });
+    const neg = items.filter((_, i) => a.itemStats[i].rCorrected < 0);
+    if (neg.length) R.warnings.push(`Negative item-total correlation for ${neg.join(", ")}. These items may need reverse scoring before calculating α.`);
+    R.sentence = `The ${a.k}-item scale showed ${grade(a.alpha)} internal consistency (Cronbach's α = ${fmt(a.alpha, 2)}, 95% CI ${ci(a.ciLo, a.ciHi, 2)}, n = ${a.n}).`;
+    R.chart = { type: "bars", data: items.map((it, i) => ({ label: it, value: a.itemStats[i].rCorrected })), unit: "", yLabel: "Corrected item-total r", decimals: 2 };
+    R.warnings.push(droppedWarn(ds.rows.length - rows.length, "rows with a missing item"));
+  },
+
+  km(R, c, ds) {
+    const t = [], e = [], g = [];
+    for (const r of ds.rows) {
+      const tv = ds.num(r, c.time), st = ds.cat(r, c.status), gv = c.group ? ds.cat(r, c.group) : "All";
+      if (!Number.isFinite(tv) || st == null || gv == null) continue;
+      if (tv < 0) fail(`"${c.time}" has negative values. Follow-up time must be 0 or more.`);
+      t.push(tv); e.push(st === c.event ? 1 : 0); g.push(gv);
+    }
+    if (t.length < 3) fail("Need at least 3 rows with time and status.");
+    if (!S.sum(e)) fail(`No one has ${c.status} = ${c.event}, so survival cannot be estimated.`);
+    const L = [...new Set(g)].sort(naturalCompare), k = decimalsFor(t);
+    const fits = L.map(l => S.kaplanMeier(t.filter((_, i) => g[i] === l), e.filter((_, i) => g[i] === l)));
+    const med = f => (Number.isFinite(f.median) ? `${fmt(f.median, k)} (${Number.isFinite(f.medianLo) ? fmt(f.medianLo, k) : "—"} to ${Number.isFinite(f.medianHi) ? fmt(f.medianHi, k) : "not reached"})` : "Not reached");
+    R.subtitle = c.group ? `${c.time} by ${c.group} (event: ${c.status} = ${c.event})` : `${c.time} (event: ${c.status} = ${c.event})`;
+    R.tables.push({ title: "Survival summary", columns: [c.group || "Group", "n", "Events", "Censored", "Median survival (95% CI)"],
+      rows: L.map((l, i) => [{ t: l, bold: true }, fmtN(fits[i].n), fmtN(fits[i].events), fmtN(fits[i].n - fits[i].events), med(fits[i])]),
+      notes: [`Event = ${c.status} = ${c.event}; everyone else is censored at their last follow-up. 95% CI by the log(−log) method.`] });
+    let lr = null;
+    if (L.length > 1) {
+      lr = S.logRank(t, e, g, L);
+      R.tables.push({ title: "Log-rank test", columns: ["χ²", "df", "p", "Observed / expected events"], rows: [[fmt(lr.chi2, 3), fmtN(lr.df), pCell(lr.p), L.map((l, i) => `${l}: ${lr.O[i]} / ${fmt(lr.E[i], 1)}`).join("; ")]] });
+      R.cards = [{ label: "Log-rank χ²", value: fmt(lr.chi2, 3) }, { label: "df", value: fmtN(lr.df) }, { label: "p", value: fmtP(lr.p), p: lr.p }, { label: "Events / n", value: `${S.sum(e)} / ${t.length}` }];
+    } else {
+      R.cards = [{ label: "n", value: fmtN(fits[0].n) }, { label: "Events", value: fmtN(fits[0].events) }, { label: "Median survival", value: Number.isFinite(fits[0].median) ? fmt(fits[0].median, k) : "Not reached" }];
+    }
+    L.forEach((l, i) => {
+      const rows = fits[i].rows, step = Math.max(1, Math.ceil(rows.length / 15));
+      R.tables.push({ title: `Survival table${L.length > 1 ? `: ${l}` : ""}`, columns: ["Time", "At risk", "Events", "Survival", "95% CI"],
+        rows: rows.filter((_, j) => j % step === 0 || j === rows.length - 1).map(q => [fmt(q.t, k), fmtN(q.atRisk), fmtN(q.d), fmtPct(q.S), Number.isFinite(q.lo) ? `${fmtPct(q.lo)} to ${fmtPct(q.hi)}` : "—"]),
+        notes: rows.length > 15 ? ["Every few event times are shown to keep the table short."] : [] });
+    });
+    R.sentence = L.length > 1
+      ? `Median survival was ${L.map((l, i) => `${med(fits[i]).replace(/^Not/, "not")} in ${l}`).join(" and ")}. Survival ${sig(lr.p) ? "differed significantly" : "did not differ significantly"} between groups (log-rank χ²(${lr.df}) = ${fmt(lr.chi2, 2)}, ${pText(lr.p)}).`
+      : `Of ${fits[0].n} participants, ${fits[0].events} had the event. Median survival was ${med(fits[0]).replace(/^Not/, "not")}.`;
+    R.chart = { type: "km", xLabel: c.time, series: L.map((l, i) => { const pts = [{ x: 0, y: 1 }]; let prev = 1; for (const q of fits[i].rows) { pts.push({ x: q.t, y: prev }, { x: q.t, y: q.S }); prev = q.S; } pts.push({ x: Math.max(...t.filter((_, j) => g[j] === l)), y: prev }); return { label: l, points: pts }; }) };
+    R.warnings.push(droppedWarn(ds.rows.length - t.length));
+  },
 };
 
 function crossTable(rowVar, colVar, la, lb, t, x) {

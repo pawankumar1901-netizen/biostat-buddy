@@ -31,3 +31,13 @@ test("Logistic regression flags separation", () => {
   const X = [], yy = []; for (let i = 0; i < 40; i++) { X.push([i]); yy.push(i >= 20 ? 1 : 0); }
   assert.equal(S.logisticRegression(X, yy, ["X"]).separation, true);
 });
+
+const N = JSON.parse(readFileSync(new URL("./new-reference.json", import.meta.url)));
+test("Clopper-Pearson exact CI", () => { const [lo, hi] = S.exactCI(37, 50); close(lo, N.cp[0], 1e-6); close(hi, N.cp[1], 1e-6); });
+test("ROC AUC", () => close(S.roc(N.scores, N.labels).auc, N.auc, 1e-9));
+test("Cohen's kappa", () => close(S.cohenKappa(N.kt).kappa, N.kappa, 1e-9));
+test("Cronbach's alpha", () => close(S.cronbach(N.items).alpha, N.alpha, 1e-9));
+test("Kaplan-Meier median and log-rank", () => {
+  close(S.kaplanMeier(N.time.slice(0, 30), N.event.slice(0, 30)).median, N.km_median, 1e-9);
+  close(S.logRank(N.time, N.event, N.grp, ["A", "B"]).p, N.lr_p, 1e-6);
+});

@@ -77,3 +77,42 @@ export function printHtml(bodyHtml, title) {
   };
   setTimeout(go, 400);
 }
+
+// Chart → standalone SVG (light colours, white background, legend drawn in) for PDF, PNG and Word.
+export function chartSvg(container, keys) {
+  const svg = container?.querySelector(".recharts-wrapper > svg.recharts-surface, svg.bb-svg");
+  if (!svg) return null;
+  const box = svg.getBoundingClientRect();
+  const vb = svg.viewBox?.baseVal;
+  const w = Math.round(vb && vb.width ? vb.width : box.width) || 600, h = Math.round(vb && vb.height ? vb.height : box.height) || 260;
+  const probe = document.createElement("div");
+  probe.dataset.theme = "light"; probe.style.display = "none"; document.body.appendChild(probe);
+  const css = getComputedStyle(probe);
+  const resolve = html => html.replace(/var\(--([\w-]+)\)/g, (m, n) => css.getPropertyValue(`--${n}`).trim() || m);
+  const clone = svg.cloneNode(true);
+  clone.setAttribute("width", w); clone.setAttribute("height", h); clone.setAttribute("viewBox", `0 0 ${w} ${h}`); clone.removeAttribute("style");
+  const inner = resolve(clone.outerHTML);
+  probe.remove();
+  const PAL = ["#2F80D9", "#1FA36A", "#E8873A", "#8B6CF0", "#E05252", "#2BA3B5", "#C9A227", "#D9609C"];
+  let lx = 10;
+  const legend = (keys || []).map((k, i) => { const x = lx; lx += 26 + String(k).length * 7; return `<rect x="${x}" y="${h + 8}" width="10" height="10" fill="${PAL[i % PAL.length]}"/><text x="${x + 14}" y="${h + 17}" font-size="11" fill="#333">${esc(k)}</text>`; }).join("");
+  const H = h + (keys?.length ? 26 : 0);
+  const str = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${H}" viewBox="0 0 ${w} ${H}"><style>text{font-family:Figtree,Arial,Helvetica,sans-serif}</style><rect width="100%" height="100%" fill="#fff"/>${inner}${legend}</svg>`;
+  return { svg: str, w, h: H };
+}
+export function svgToPng({ svg, w, h }, scale = 2) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement("canvas"); c.width = w * scale; c.height = h * scale;
+      const ctx = c.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height); ctx.drawImage(img, 0, 0, c.width, c.height);
+      resolve(c.toDataURL("image/png"));
+    };
+    img.onerror = () => reject(new Error("Could not draw the chart."));
+    img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg.replace(/^<svg /, '<svg xmlns:xlink="http://www.w3.org/1999/xlink" '));
+  });
+}
+export function downloadDataUrl(url, filename) {
+  const a = document.createElement("a"); a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+}
