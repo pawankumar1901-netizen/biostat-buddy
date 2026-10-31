@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { C, PALETTE, s } from "./theme.js";
+import { C, PALETTE, s, mix } from "./theme.js";
 import { CopyButton, DataTable, Notice } from "./parts.jsx";
 import ChartView from "./Charts.jsx";
 import { aiSummary, testById } from "../lib/reports.js";
@@ -33,7 +33,10 @@ export default function ReportView({ report, fileName, onSwitch, narrow }) {
   const exportPdf = () => {
     const main = chartRef.current?.querySelector(".recharts-wrapper > svg.recharts-surface");
     const legend = report.chart?.keys ? `<div style="font-size:9pt;margin-top:4px">${report.chart.keys.map((k, i) => `<span style="display:inline-block;width:10px;height:10px;background:${PALETTE[i % PALETTE.length]};margin:0 4px 0 10px"></span>${esc(k)}`).join("")}</div>` : "";
-    const svgs = main ? main.outerHTML + legend : "";
+    // Charts use theme variables; swap them for real colours so the printout matches what is on screen.
+    const css = getComputedStyle(document.documentElement);
+    const resolve = html => html.replace(/var\(--([\w-]+)\)/g, (m, n) => css.getPropertyValue(`--${n}`).trim() || m);
+    const svgs = main ? resolve(main.outerHTML) + legend : "";
     const date = new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
     const html = `
       <div class="hdr"><div class="by">${esc(BYLINE)}</div><h1>${esc(report.title)}</h1>
@@ -64,7 +67,7 @@ export default function ReportView({ report, fileName, onSwitch, narrow }) {
         {report.cards.map(c => {
           const col = c.p != null ? (c.p < 0.05 ? C.green : C.red) : c.tone === "warn" ? C.yellow : c.tone === "good" ? C.green : C.accent;
           return (
-            <div key={c.label} style={{ background: C.surface, border: `1px solid ${c.p != null ? col + "66" : C.border}`, borderRadius: 8, padding: "10px 12px" }}>
+            <div key={c.label} style={{ background: C.surface, border: `1px solid ${c.p != null ? mix(col, "66") : C.border}`, borderRadius: 8, padding: "10px 12px" }}>
               <div style={{ fontSize: c.value.length > 16 ? 13 : 18, fontWeight: 800, color: col, wordBreak: "break-word" }}>{c.p != null && c.p < 0.001 ? "<0.001" : c.value}</div>
               <div style={{ fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: 1, marginTop: 3 }}>{c.label}</div>
             </div>
@@ -80,7 +83,7 @@ export default function ReportView({ report, fileName, onSwitch, narrow }) {
         </Notice>
       ))}
 
-      <div style={{ background: C.surface, border: `1px solid ${C.accent}44`, borderRadius: 10, padding: "12px 14px", margin: "6px 0 16px" }}>
+      <div style={{ background: C.surface, border: `1px solid ${mix(C.accent, "44")}`, borderRadius: 10, padding: "12px 14px", margin: "6px 0 16px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, gap: 8 }}>
           <span style={{ ...s.h3, margin: 0, color: C.accent }}>Result in words</span>
           <CopyButton label="Copy" style={{ padding: "3px 9px", fontSize: 11 }} getText={() => report.sentence} getHtml={() => `<p>${esc(report.sentence)}</p>`} />
@@ -92,7 +95,7 @@ export default function ReportView({ report, fileName, onSwitch, narrow }) {
       {report.tables.map((t, i) => <DataTable key={i} table={t} />)}
 
       {ai.status === "done" && (
-        <div style={{ background: C.surface, border: `1px solid ${C.purple}44`, borderRadius: 10, padding: 14, marginTop: 8 }}>
+        <div style={{ background: C.surface, border: `1px solid ${mix(C.purple, "44")}`, borderRadius: 10, padding: 14, marginTop: 8 }}>
           <div style={{ ...s.h3, color: C.purple }}>✨ AI explanation</div>
           <div style={{ fontSize: 13, lineHeight: 1.7, fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif" }} dangerouslySetInnerHTML={{ __html: md(ai.text) }} />
           <div style={{ fontSize: 10, color: C.muted, marginTop: 8 }}>AI-generated. Check it against the tables above before using it.</div>

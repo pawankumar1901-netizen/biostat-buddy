@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { C, MONO, s, useNarrow } from "./ui/theme.js";
+import { C, FONT, s, useNarrow, useTheme, mix } from "./ui/theme.js";
+import { Mark, Wordmark } from "./ui/Logo.jsx";
 import { Notice } from "./ui/parts.jsx";
 import DataTab from "./ui/DataTab.jsx";
 import AnalyseTab from "./ui/AnalyseTab.jsx";
@@ -11,31 +12,53 @@ import { demoSheet } from "./lib/demo.js";
 import { SAMPLE_URL } from "./lib/guide.js";
 
 const BYLINE = "Dr. Pawan Kumar B · Community Medicine";
-const VERSION = "2.0";
+const VERSION = "2.1";
 const TABS = [["data", "Data"], ["analyse", "Analyse"], ["table1", "Table 1"], ["guide", "Test guide"]];
 
-function Header({ children, narrow }) {
+function ThemeButton({ theme, toggle }) {
+  const dark = theme === "dark";
   return (
-    <header style={{ background: C.surface, borderBottom: `1px solid ${C.border}`, padding: narrow ? "12px 16px" : "14px 28px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-      <div style={{ flex: 1, minWidth: 180 }}>
-        <div style={{ fontSize: narrow ? 19 : 22, fontWeight: 800, letterSpacing: -1, color: C.accent }}>⚕ Biostat Buddy</div>
-        <div style={{ fontSize: 10, color: C.muted, letterSpacing: 2, textTransform: "uppercase" }}>{BYLINE}</div>
+    <button type="button" onClick={toggle} aria-label={dark ? "Switch to light mode" : "Switch to dark mode"} title={dark ? "Light mode" : "Dark mode"}
+      style={{ ...s.ghost, width: 38, height: 38, padding: 0, display: "grid", placeItems: "center", borderRadius: 999 }}>
+      {dark
+        ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></svg>
+        : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z" /></svg>}
+    </button>
+  );
+}
+function Header({ children, narrow, theme, toggle }) {
+  return (
+    <header style={{ background: C.card, borderBottom: `1px solid ${C.border}`, padding: narrow ? "10px 14px" : "12px 28px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+      <div style={{ flex: 1, minWidth: 200, display: "flex", alignItems: "center", gap: 10 }}>
+        <Mark width={narrow ? 46 : 54} />
+        <div>
+          <Wordmark size={narrow ? 19 : 22} />
+          <div style={{ fontSize: 9.5, color: C.muted, letterSpacing: 1.6, textTransform: "uppercase", marginTop: 4, fontWeight: 600 }}>{BYLINE}</div>
+        </div>
       </div>
-      {children}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        {children}
+        <ThemeButton theme={theme} toggle={toggle} />
+      </div>
     </header>
   );
 }
 function Footer() {
   return (
-    <footer style={{ textAlign: "center", fontSize: 11, color: C.muted, padding: "20px 16px 28px", lineHeight: 1.7 }}>
-      Your data stays on this device. Only summary results are sent if you press AI explain.<br />
-      Biostat Buddy v{VERSION} · {BYLINE}
+    <footer style={{ textAlign: "center", fontSize: 12, color: C.muted, padding: "22px 16px 30px", lineHeight: 1.7, borderTop: `1px solid ${C.border}`, marginTop: 8, display: "grid", justifyItems: "center", gap: 8 }}>
+      <div>Your data stays on this device. Only summary results are sent if you press AI explain.</div>
+      <div>Biostat Buddy v{VERSION} · {BYLINE}</div>
+      <a href="https://pawansdroid.in" target="_blank" rel="noopener" aria-label="pawansDr.oid — visit pawansdroid.in" style={{ display: "inline-block", marginTop: 4, opacity: 0.9 }}>
+        <img className="pd-for-light" src="/pawansdroid-logo-dark.png" alt="pawansDr.oid" width="120" height="36" loading="lazy" style={{ width: 120, height: "auto" }} />
+        <img className="pd-for-dark" src="/pawansdroid-logo.png" alt="pawansDr.oid" width="120" height="36" loading="lazy" style={{ width: 120, height: "auto" }} />
+      </a>
     </footer>
   );
 }
 
 export default function App() {
   const narrow = useNarrow();
+  const [theme, toggleTheme] = useTheme();
   const [file, setFile] = useState(null);          // { name, sheets }
   const [homeError, setHomeError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -93,12 +116,12 @@ export default function App() {
   }, [autoRun, testId, cfg, ds]); // eslint-disable-line react-hooks/exhaustive-deps
   const newFile = () => { setFile(null); setResult(null); setHomeError(""); };
 
-  const app = { minHeight: "100vh", background: C.bg, color: C.text, fontFamily: MONO, display: "flex", flexDirection: "column" };
+  const app = { minHeight: "100vh", background: C.bg, color: C.text, fontFamily: FONT, display: "flex", flexDirection: "column" };
 
   if (!file) {
     return (
       <div style={app}>
-        <Header narrow={narrow} />
+        <Header narrow={narrow} theme={theme} toggle={toggleTheme} />
         <main style={{ flex: 1, maxWidth: 760, width: "100%", margin: "0 auto", padding: narrow ? "36px 16px" : "64px 24px", display: "flex", flexDirection: "column", alignItems: "center" }}>
           <h1 style={{ fontSize: narrow ? 30 : 42, fontWeight: 900, letterSpacing: -2, lineHeight: 1.1, textAlign: "center", margin: 0 }}>
             No more SPSS panic<br /><span style={{ color: C.accent }}>at 2 AM.</span>
@@ -109,8 +132,8 @@ export default function App() {
           <label htmlFor="fileUpload"
             onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)}
             onDrop={e => { e.preventDefault(); setDragOver(false); handleFile(e.dataTransfer.files[0]); }}
-            style={{ border: `2px dashed ${dragOver ? C.accent : C.border}`, borderRadius: 16, padding: narrow ? "36px 20px" : "46px 56px", cursor: "pointer", textAlign: "center", background: dragOver ? C.accent + "11" : C.card, width: "100%", maxWidth: 460, display: "block" }}>
-            <div style={{ fontSize: 38, marginBottom: 10 }}>📊</div>
+            style={{ border: `2px dashed ${dragOver ? C.accent : C.border}`, borderRadius: 16, padding: narrow ? "36px 20px" : "46px 56px", cursor: "pointer", textAlign: "center", background: dragOver ? mix(C.accent, "11") : C.card, width: "100%", maxWidth: 460, display: "block" }}>
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ color: "var(--accent)", marginBottom: 8 }}><path d="M12 15V4M7.5 8.5 12 4l4.5 4.5" /><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" /></svg>
             <div style={{ fontWeight: 700, fontSize: 15 }}>{loading ? "Reading file…" : "Tap or drop your file here"}</div>
             <div style={{ color: C.muted, fontSize: 12, marginTop: 6 }}>CSV · Excel (XLSX, XLS) · ODS</div>
             <div style={{ ...s.btn, display: "inline-block", marginTop: 16 }}>Browse file</div>
@@ -133,7 +156,7 @@ export default function App() {
 
   return (
     <div style={app}>
-      <Header narrow={narrow}>
+      <Header narrow={narrow} theme={theme} toggle={toggleTheme}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span style={{ ...s.tag(C.green), maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }} title={file.name}>✓ {file.name}</span>
           {ds && <span style={s.tag(C.accent)}>{ds.rows.length} rows</span>}

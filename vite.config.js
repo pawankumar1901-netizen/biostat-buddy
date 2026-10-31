@@ -11,13 +11,13 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["favicon.ico", "apple-touch-icon.png"],
+      includeAssets: ["favicon.ico", "favicon.svg", "apple-touch-icon.png", "pawansdroid-logo.png", "pawansdroid-logo-dark.png"],
       manifest: {
         name: "Biostat Buddy",
         short_name: "BioBuddy",
         description: "Biostatistics for theses — Dr. Pawan Kumar B, Community Medicine",
-        theme_color: "#0D1117",
-        background_color: "#0D1117",
+        theme_color: "#FFFFFF",
+        background_color: "#F5F7FA",
         display: "standalone",
         orientation: "any",
         scope: "/",

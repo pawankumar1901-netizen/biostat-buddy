@@ -2,7 +2,7 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Cell, ErrorBar,
   ScatterChart, Scatter, ReferenceLine, Legend, LabelList,
 } from "recharts";
-import { C, PALETTE } from "./theme.js";
+import { C, PALETTE, mix } from "./theme.js";
 import { fmt } from "../lib/format.js";
 
 const tip = { contentStyle: { background: C.card, border: `1px solid ${C.border}`, fontSize: 12, color: C.text }, labelStyle: { color: C.text }, itemStyle: { color: C.text } };
@@ -19,7 +19,7 @@ export default function ChartView({ chart }) {
           <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
           <XAxis dataKey="label" tick={tick} interval="preserveStartEnd" label={axisLabel(chart.xLabel)} />
           <YAxis tick={tick} allowDecimals={false} />
-          <Tooltip {...tip} cursor={{ fill: C.border + "55" }} formatter={v => [v, "Count"]} />
+          <Tooltip {...tip} cursor={{ fill: mix(C.border, "55") }} formatter={v => [v, "Count"]} />
           <Bar dataKey="count" fill={C.accent} radius={[3, 3, 0, 0]} isAnimationActive={false} />
         </BarChart>
       </ResponsiveContainer>
@@ -32,7 +32,7 @@ export default function ChartView({ chart }) {
           <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
           <XAxis dataKey="label" tick={tick} interval={0} />
           <YAxis tick={tick} unit={chart.unit} domain={[0, "auto"]} label={chart.yLabel ? axisLabel(chart.yLabel, -90) : undefined} />
-          <Tooltip {...tip} cursor={{ fill: C.border + "55" }} formatter={v => [`${fmt(v, 1)}${chart.unit || ""}`, chart.yLabel || "Percent"]} />
+          <Tooltip {...tip} cursor={{ fill: mix(C.border, "55") }} formatter={v => [`${fmt(v, 1)}${chart.unit || ""}`, chart.yLabel || "Percent"]} />
           <Bar dataKey="value" radius={[3, 3, 0, 0]} isAnimationActive={false}>
             {chart.data.map((_, i) => <Cell key={i} fill={PALETTE[i % PALETTE.length]} />)}
             <LabelList dataKey="value" position="top" fill={C.muted} fontSize={11} formatter={v => `${fmt(v, 1)}${chart.unit || ""}`} />
@@ -49,7 +49,7 @@ export default function ChartView({ chart }) {
           <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
           <XAxis dataKey="label" tick={tick} interval={0} />
           <YAxis tick={tick} label={axisLabel(chart.yLabel, -90)} width={64} />
-          <Tooltip {...tip} cursor={{ fill: C.border + "55" }} formatter={(v, n, p) => [`${fmt(v)} (${fmt(p.payload.lo)} to ${fmt(p.payload.hi)})`, chart.yLabel]} />
+          <Tooltip {...tip} cursor={{ fill: mix(C.border, "55") }} formatter={(v, n, p) => [`${fmt(v)} (${fmt(p.payload.lo)} to ${fmt(p.payload.hi)})`, chart.yLabel]} />
           <Bar dataKey="value" radius={[3, 3, 0, 0]} isAnimationActive={false} fillOpacity={0.85}>
             {data.map((_, i) => <Cell key={i} fill={PALETTE[i % PALETTE.length]} />)}
             <ErrorBar dataKey="err" width={10} stroke={C.text} strokeWidth={1.5} />
@@ -65,7 +65,7 @@ export default function ChartView({ chart }) {
           <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
           <XAxis dataKey="label" tick={tick} interval={0} />
           <YAxis tick={tick} unit="%" domain={[0, 100]} label={axisLabel(chart.yLabel, -90)} width={64} />
-          <Tooltip {...tip} cursor={{ fill: C.border + "55" }} formatter={v => `${fmt(v, 1)}%`} />
+          <Tooltip {...tip} cursor={{ fill: mix(C.border, "55") }} formatter={v => `${fmt(v, 1)}%`} />
           <Legend wrapperStyle={{ fontSize: 11, color: C.muted }} />
           {chart.keys.map((k, i) => <Bar key={k} dataKey={k} fill={PALETTE[i % PALETTE.length]} radius={[3, 3, 0, 0]} isAnimationActive={false} />)}
         </BarChart>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { C, s } from "./theme.js";
+import { C, s, mix } from "./theme.js";
 import { Notice } from "./parts.jsx";
 import { fmt } from "../lib/format.js";
 
@@ -46,7 +46,7 @@ export default function DataTab({ ds, sheets, sheetIdx, setSheetIdx, headerRow, 
               <tr key={v.name}>
                 <td style={{ ...s.td, fontWeight: 700, maxWidth: 180, wordBreak: "break-word" }}>{v.name}</td>
                 <td style={s.td}>
-                  <select aria-label={`Type of ${v.name}`} value={v.type} onChange={e => setType(v.name, e.target.value)} style={{ ...s.select, width: 128, padding: "5px 6px", fontSize: 12, borderColor: typeCol(v.type) + "88", color: typeCol(v.type) }}>
+                  <select aria-label={`Type of ${v.name}`} value={v.type} onChange={e => setType(v.name, e.target.value)} style={{ ...s.select, width: 128, padding: "5px 6px", fontSize: 12, borderColor: mix(typeCol(v.type), "88"), color: typeCol(v.type) }}>
                     {TYPES.map(([k, l]) => <option key={k} value={k} disabled={k === "numeric" && v.nValid > 0 && v.nNonNumeric === v.nValid}>{l}</option>)}
                   </select>
                 </td>
@@ -70,7 +70,7 @@ export default function DataTab({ ds, sheets, sheetIdx, setSheetIdx, headerRow, 
             <tbody>{ds.rows.slice(0, 30).map((r, i) => (
               <tr key={i}><td style={{ ...s.td, color: C.muted }}>{i + 1}</td>{r.map((c, j) => {
                 const miss = ds.isMissing(c);
-                return <td key={j} style={{ ...s.td, whiteSpace: "nowrap", color: miss ? C.yellow : C.text, background: miss ? C.yellow + "10" : "transparent" }}>{miss ? (c === "" ? "·" : c) : c}</td>;
+                return <td key={j} style={{ ...s.td, whiteSpace: "nowrap", color: miss ? C.yellow : C.text, background: miss ? mix(C.yellow, "10") : "transparent" }}>{miss ? (c === "" ? "·" : c) : c}</td>;
               })}</tr>
             ))}</tbody>
           </table>

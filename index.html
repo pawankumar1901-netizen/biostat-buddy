@@ -1,25 +1,55 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0D1117" />
+    <meta name="theme-color" content="#FFFFFF" />
     <meta name="description" content="Biostatistics for MBBS interns and PG theses: t-tests, chi-square, OR/RR, regression, Table 1 for Word. By Dr. Pawan Kumar B, Community Medicine." />
     <link rel="icon" href="/favicon.ico" sizes="32x32" />
-    <link rel="icon" type="image/png" href="/icon-192.png" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="BioBuddy" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Biostat Buddy" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@700;800&display=swap" rel="stylesheet" />
     <title>Biostat Buddy</title>
+    <script>
+      // Apply the saved theme before the page paints (no white/dark flash).
+      try {
+        var t = localStorage.getItem("bb-theme");
+        if (t === "dark" || t === "light") document.documentElement.dataset.theme = t;
+        if (t === "dark") document.querySelector('meta[name="theme-color"]').setAttribute("content", "#0D1117");
+      } catch (e) {}
+    </script>
     <style>
+      /* Light: Astra clean. Dark: modern dark (the earlier look, refreshed). */
+      :root, [data-theme="light"] {
+        --bg: #F5F7FA; --surface: #F6F8FA; --card: #FFFFFF; --border: #E1E6EC;
+        --text: #1F2A37; --muted: #5B6675; --accent: #0170B9; --on-accent: #FFFFFF;
+        --green: #0A7D3E; --yellow: #A86A0B; --red: #C53030; --purple: #6D4FD8;
+        --shadow: 0 1px 2px rgba(16, 24, 40, .04);
+        --brand-a: #1F2B6C; --brand-b: #2F7DE1; --logo-curve: #1F2B6C; --logo-fill: #E8EEF6;
+        color-scheme: light;
+      }
+      [data-theme="dark"] {
+        --bg: #0D1117; --surface: #161B22; --card: #1C2333; --border: #30363D;
+        --text: #E6EDF3; --muted: #8B949E; --accent: #58A6FF; --on-accent: #0D1117;
+        --green: #3FB950; --yellow: #E3B341; --red: #F85149; --purple: #BC8CFF;
+        --shadow: none;
+        --brand-a: #F1F4FA; --brand-b: #6EA8F7; --logo-curve: #C9D3EA; --logo-fill: #1B2540;
+        color-scheme: dark;
+      }
       * { margin: 0; padding: 0; box-sizing: border-box; }
-      html, body { background: #0D1117; }
+      html, body { background: var(--bg); color: var(--text); }
       #root { min-height: 100vh; }
+      a { color: var(--accent); }
+      :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+      .pd-for-light { display: inline-block; } .pd-for-dark { display: none; }
+      [data-theme="dark"] .pd-for-light { display: none; } [data-theme="dark"] .pd-for-dark { display: inline-block; }
+      @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
     </style>
   </head>
   <body>
